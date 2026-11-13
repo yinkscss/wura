@@ -11,7 +11,7 @@ You are building the first web app for **Agent**, a working name (the public pro
 Read these before writing code:
 
 - `design/README.md` and every PNG in `design/shots/` — this is the look and the screens to match
-- `design/src/` — HTML/CSS sources for those screens (Plus Jakarta Sans, starfield, half-moon card layout)
+- `design/src/` — HTML/CSS sources for those screens (Plus Jakarta Sans, starfield, half-moon card layout on the landing page only)
 - `docs/concept.md` — what the product is
 - `docs/routing.md` — the agent compares rates itself; StellarRoute is not a live dependency
 - `docs/kyc-and-funding.md` — USDC needs no ID; naira needs an identity check before the first top-up
@@ -20,7 +20,7 @@ Read these before writing code:
 
 ## What to build
 
-A Next.js (App Router) app with Tailwind, TypeScript, deployable to Vercel. Match the designs closely: deep blue `#08318D` / `#092D8E`, white, bubblegum pink `#FD91CC`, Plus Jakarta Sans (or Inter), solid white cards with 16–24px radius and soft deep shadows, pill buttons, starfield on blue heroes, half-moon card arcs on the landing and a gentle arc on the dashboard stats and onboarding cards. No glassmorphism. No official Claude / ChatGPT / Telegram / WhatsApp logos — text labels and simple generic icons only.
+A Next.js (App Router) app with Tailwind, TypeScript, deployable to Vercel. Match the designs closely: deep blue `#08318D` / `#092D8E`, white, bubblegum pink `#FD91CC`, Plus Jakarta Sans (or Inter), solid white cards with 16–24px radius and soft deep shadows, pill buttons, starfield on blue heroes, half-moon card arc on the **landing page only**. Dashboard, onboarding, chat and other app screens use a normal, level grid — do not rotate those cards. No glassmorphism. No official Claude / ChatGPT / Telegram / WhatsApp logos — text labels and simple generic icons only.
 
 Placeholder wordmark: **Agent**, with a small “name TBD” where the mocks show it.
 
@@ -28,11 +28,11 @@ Placeholder wordmark: **Agent**, with a small “name TBD” where the mocks sho
 
 1. **Landing** — match `design/shots/01-landing-desktop.png`. Headline: “Your money, on chat.” Five bento cards on a half-moon (centre highest, sides rotated about ±7° and ±13°): chat snippet, rate comparison, pink daily-limit gauge, payment link, activity. CTAs go to sign-in / app.
 2. **Sign-in** — not in the PNG set; invent one screen in the same style. Email field, send code, enter the one-time code. Copy like “Sign in with email. We’ll create your Stellar wallet.” After success, create or reuse the Privy Stellar wallet and go to the wallet or onboarding.
-3. **Onboarding / fund choice** — match `design/shots/06-onboarding-verify-once.png`. Two cards: **Fund with USDC** (no ID) and **Fund with naira** (identity check before the first naira deposit; do not promise Paycrest will skip every future NIN until that is confirmed).
+3. **Onboarding / fund choice** — match `design/shots/06-onboarding-verify-once.png`. Two level cards side by side: **Fund with USDC** (no ID) and **Fund with naira** (identity check before the first naira deposit; do not promise Paycrest will skip every future NIN until that is confirmed).
 4. **Chat (swap approve)** — match `design/shots/02-chat-swap-approve.png`. User: “Change ₦50,000 to dollars.” Agent replies with a quote card comparing SDEX, Soroswap and Aquarius, best row highlighted, fee and “you get”, **Approve** and **Cancel**. Nothing is sent until Approve.
 5. **Chat (send confirm)** — match `design/shots/03-send-confirm.png`. User: “Send $20 to Tunde.” Confirmation with destination, fee, daily limit remaining, per-payment cap, Confirm / Cancel.
 6. **Chat (payment link)** — match `design/shots/04-payment-link.png`. User: “Make a payment link for ₦15,000.” Card with amount, a clearly fictional link on a reserved host (e.g. `example.com`), Copy / Share, status Open.
-7. **Wallet dashboard** — match `design/shots/05-dashboard-balance-limits.png`. NGN and USDC balances, daily limit gauge, per-payment cap, transaction log, connected apps list (Claude, ChatGPT, Telegram, WhatsApp as labels only).
+7. **Wallet dashboard** — match `design/shots/05-dashboard-balance-limits.png`. NGN and USDC balances, daily limit gauge, per-payment cap, transaction log, connected apps list (Claude, ChatGPT, Telegram, WhatsApp as labels only). Level card grid, no rotation.
 
 A simple signed-in shell (sidebar like the dashboard) is enough. Mobile chat can be a narrow column or a `/chat` route; it does not need a native app.
 

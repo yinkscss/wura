@@ -903,13 +903,7 @@ body.dash {
   display: grid;
   grid-template-columns: 1.1fr 1.1fr 1.05fr 0.95fr;
   gap: 16px;
-  align-items: stretch;
-  padding: 10px 8px 22px;
 }
-.kpis .kpi:nth-child(1) { transform: rotate(-4.5deg) translateY(16px); transform-origin: 50% 100%; }
-.kpis .kpi:nth-child(2) { transform: rotate(-2deg) translateY(-4px); transform-origin: 50% 100%; }
-.kpis .kpi:nth-child(3) { transform: rotate(1.5deg) translateY(-10px); transform-origin: 50% 100%; z-index: 2; }
-.kpis .kpi:nth-child(4) { transform: rotate(4.5deg) translateY(16px); transform-origin: 50% 100%; }
 .kpi {
   background: #fff;
   border-radius: 20px;
@@ -1079,20 +1073,11 @@ body.onboard {
 .fund-grid {
   position: relative;
   z-index: 4;
-  margin: 48px auto 0;
+  margin: 40px auto 0;
   width: 980px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 36px;
-  padding-bottom: 12px;
-}
-.fund-grid .fund-card.featured {
-  transform: rotate(-5.5deg) translateY(10px);
-  transform-origin: 50% 100%;
-}
-.fund-grid .fund-card:not(.featured) {
-  transform: rotate(5.5deg) translateY(10px);
-  transform-origin: 50% 100%;
+  gap: 22px;
 }
 .fund-card .pill { height: 24px; padding: 0 10px; align-self: flex-start; }
 .fund-card {
