@@ -85,18 +85,21 @@ export function AppShell({ children }: { children: ReactNode }) {
     <OverviewProvider>
       <div className="min-h-dvh bg-page lg:grid lg:grid-cols-[236px_1fr]">
         {/* Desktop sidebar */}
-        <aside className="panel-sky sticky top-0 hidden h-dvh flex-col overflow-hidden p-5 text-white lg:flex">
-          <Starfield density={1.6} />
-          <div className="relative flex h-full flex-col">
-            <div className="px-1 pb-8 pt-2">
-              <Wordmark href="/wallet" />
+        {/* The blue column stretches the full page height; the menu stays pinned inside it. */}
+        <div className="panel-sky relative hidden min-h-dvh lg:block">
+          <aside className="sticky top-0 flex h-dvh flex-col overflow-hidden p-5 text-white">
+            <Starfield density={1.6} />
+            <div className="relative flex h-full flex-col">
+              <div className="px-1 pb-8 pt-2">
+                <Wordmark href="/wallet" />
+              </div>
+              <NavList />
+              <div className="mt-auto">
+                <PreviewBadge />
+              </div>
             </div>
-            <NavList />
-            <div className="mt-auto">
-              <PreviewBadge />
-            </div>
-          </div>
-        </aside>
+          </aside>
+        </div>
 
         {/* Mobile top bar */}
         <div className={cx("panel-sky sticky top-0 z-30 flex items-center justify-between px-4 py-3.5 text-white lg:hidden", isChat && "hidden")}>
