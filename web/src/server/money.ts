@@ -12,7 +12,7 @@ import type {
 import { money, naira, usdc } from "@/lib/format";
 import { config } from "./config";
 import { ApiFailure } from "./errors";
-import { compareVenues, EXAMPLE_FEE_BPS } from "./routing";
+import { compareVenues, EXAMPLE_FEE_BPS, marketRate, quoteSource } from "./routing";
 import type { Session } from "./session";
 import { signAndSubmit } from "./signer";
 import { getAccountStatus } from "./stellar";
@@ -147,6 +147,14 @@ export async function getQuote(
     );
   }
   const best = quoted[0];
+  const live = quoteSource === "live";
+  // Compare live prices with the market rate, so a thin pool can't quietly cost the user.
+  const ref = live ? await marketRate() : null;
+  let vsMarketPct: number | undefined;
+  if (ref) {
+    const marketOut = input.from === "NGN" ? amountIn / ref.rate : amountIn * ref.rate;
+    vsMarketPct = Math.round(((best.amountOut - marketOut) / marketOut) * 1000) / 10;
+  }
   const quote: Quote = {
     id: newId("q"),
     from: input.from,
@@ -154,12 +162,16 @@ export async function getQuote(
     amountIn,
     amountOut: best.amountOut,
     rate: best.rate,
-    fee: Math.round((amountIn * EXAMPLE_FEE_BPS) / 10_000),
+    // Live: each venue's fees are already inside its quote.
+    fee: live ? 0 : Math.round((amountIn * EXAMPLE_FEE_BPS) / 10_000),
     venues: quoted,
     unquoted,
     bestVenue: best.venue,
     expiresAt: Date.now() + config.quoteTtlMs,
     status: "pending",
+    source: quoteSource,
+    market: ref ?? undefined,
+    vsMarketPct,
   };
   w.quotes.set(quote.id, quote);
   return quote;

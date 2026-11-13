@@ -12,7 +12,7 @@ export function RateRows({
   unit,
   compact = false,
 }: {
-  venues: Pick<VenueQuote, "venue" | "name" | "amountOut" | "best">[];
+  venues: Pick<VenueQuote, "venue" | "name" | "amountOut" | "best" | "route">[];
   unit: "USDC" | "NGN";
   compact?: boolean;
 }) {
@@ -28,9 +28,10 @@ export function RateRows({
             v.best ? "bg-pink/[0.16] shadow-[inset_0_0_0_1.5px_var(--color-pink)]" : "bg-mist",
           )}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <span className="font-semibold tracking-[-0.02em]">{v.name}</span>
             {v.best && <Pill tone="pink-solid">Best</Pill>}
+            {v.route && !compact && <span className="truncate text-[12px] font-medium text-soft">{v.route}</span>}
           </div>
           <span className={cx("nums font-bold tracking-[-0.02em]", v.best && "text-pink-deep")}>
             {unit === "USDC" ? usdcNumber(v.amountOut) : naira(v.amountOut)}
@@ -64,6 +65,28 @@ function StateFooter({ state, doneText, cancelText }: { state: CardState; doneTe
   if (state === "cancelled")
     return <div className="rounded-full bg-mist px-4 py-3 text-center text-sm font-semibold text-muted">{cancelText}</div>;
   return null;
+}
+
+function MarketCheck({ pct, marketRate, source }: { pct: number; marketRate: number; source: string }) {
+  const bad = pct <= -3;
+  const odd = pct >= 3;
+  return (
+    <div className={cx("rounded-xl px-4 py-3 text-[13px]", bad || odd ? "bg-pink/15 text-pink-deep" : "bg-mist text-muted")}>
+      {bad ? (
+        <>
+          <b>{Math.abs(pct).toFixed(0)}% worse than the market rate</b> (₦{rate(marketRate)} per $1, {source}). Naira liquidity on Stellar is thin right now.
+        </>
+      ) : odd ? (
+        <>
+          <b>{pct.toFixed(0)}% more than the market rate</b> (₦{rate(marketRate)} per $1, {source}). The naira token is trading below ₦1 on Stellar, so check you can cash it out at face value.
+        </>
+      ) : (
+        <>
+          Within {Math.abs(pct).toFixed(1)}% of the market rate (₦{rate(marketRate)} per $1, {source}).
+        </>
+      )}
+    </div>
+  );
 }
 
 export function QuoteCard({
@@ -102,19 +125,28 @@ export function QuoteCard({
           <div className="nums mt-1 text-[16px] font-bold">{money(quote.amountIn, quote.from, true)}</div>
         </div>
         <div>
-          <div className="text-[12.5px] text-soft">Fee (in the rate)</div>
-          <div className="nums mt-1 text-[16px] font-bold">{money(quote.fee, quote.from, true)}</div>
+          <div className="text-[12.5px] text-soft">{quote.source === "live" ? "Venue fees" : "Fee (in the rate)"}</div>
+          <div className="nums mt-1 text-[16px] font-bold">
+            {quote.source === "live" ? "Included in quote" : money(quote.fee, quote.from, true)}
+          </div>
         </div>
       </div>
       <RateRows venues={quote.venues} unit={quote.to} />
       {quote.unquoted.length > 0 && (
-        <p className="rounded-xl bg-mist px-4 py-3 text-[13px] text-muted">
-          {quote.unquoted.map((u) => u.name).join(" and ")} couldn’t be quoted, so {quote.unquoted.length === 1 ? "it isn’t" : "they aren’t"} compared.
-        </p>
+        <div className="flex flex-col gap-1 rounded-xl bg-mist px-4 py-3 text-[13px] text-muted">
+          {quote.unquoted.map((u) => (
+            <span key={u.venue}>
+              <b className="text-blue">{u.name}</b> not compared: {u.reason.charAt(0).toLowerCase() + u.reason.slice(1)}.
+            </span>
+          ))}
+        </div>
+      )}
+      {quote.market && quote.vsMarketPct !== undefined && (
+        <MarketCheck pct={quote.vsMarketPct} marketRate={quote.market.rate} source={quote.market.source} />
       )}
       {live && !expired && (
         <div className="flex items-center justify-between text-[12.5px] text-soft">
-          <span>Example rates · mock mode</span>
+          <span>{quote.source === "live" ? "Live Stellar mainnet prices · swap is simulated" : "Example rates · mock mode"}</span>
           <span className="nums">Quote valid {left}s</span>
         </div>
       )}
