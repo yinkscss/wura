@@ -129,7 +129,11 @@ const soroswap: VenueAdapter = {
     });
     if (status === 401 || status === 403) fail("API key was refused");
     if (status === 429) fail("Rate limited, try again in a second");
-    if (!ok) fail(typeof body?.message === "string" && /path/i.test(body.message) ? "No route found" : "Soroswap didn't answer");
+    const why = [body?.title, body?.detail, body?.message].filter((x) => typeof x === "string").join(" ");
+    if (!ok) {
+      if (/no path|no route/i.test(why)) fail("No route in Soroswap pools");
+      fail(status >= 500 ? "Soroswap's routing is down right now" : "Soroswap didn't answer");
+    }
     const out = body?.amountOut;
     if (out === undefined || out === null) fail("No route found");
     const hops = Array.isArray(body?.routePlan?.[0]?.swapInfo?.path) ? body.routePlan[0].swapInfo.path.length - 1 : undefined;
