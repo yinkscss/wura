@@ -170,7 +170,12 @@ export function SendCard({
       <div className="h-px bg-line" />
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         <Field label="To" value={intent.to.name} />
-        <Field label="Fee (example)" value={`${usdcNumber(intent.fee)} USDC`} />
+        {intent.fee === 0 ? (
+          // Testnet: the network fee is paid in test XLM.
+          <Field label="Network fee" value="Paid in test XLM" />
+        ) : (
+          <Field label="Fee (example)" value={`${usdcNumber(intent.fee)} USDC`} />
+        )}
         <Field label="Your balance" value={`${usdcNumber(intent.balanceBefore)} USDC`} />
         <Field label="Total debit" value={`${usdcNumber(intent.total)} USDC`} />
       </div>
@@ -200,11 +205,15 @@ export function SendCard({
         <div className="grid grid-cols-[1fr_1.3fr] gap-3">
           <Button variant="outline-blue" size="lg" onClick={onCancel} disabled={state === "busy"}>Cancel</Button>
           <Button size="lg" onClick={onConfirm} disabled={state === "busy"}>
-            {state === "busy" ? "Sending…" : "Confirm send"}
+            {state === "busy" ? (intent.fee === 0 ? "Signing and sending…" : "Sending…") : "Confirm send"}
           </Button>
         </div>
       ) : (
-        <StateFooter state={state} doneText={`Sent to ${intent.to.name} (mock)`} cancelText="Cancelled. Nothing was sent." />
+        <StateFooter
+          state={state}
+          doneText={intent.fee === 0 ? `Sent to ${intent.to.name} on Stellar testnet` : `Sent to ${intent.to.name} (mock)`}
+          cancelText="Cancelled. Nothing was sent."
+        />
       )}
     </div>
   );

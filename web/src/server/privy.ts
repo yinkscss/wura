@@ -1,19 +1,31 @@
 import "server-only";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, importSPKI, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { config } from "./config";
 import { ApiFailure } from "./errors";
 import { isAccountId } from "./strkey";
 
-let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+let verifier: CryptoKey | JWTVerifyGetKey | null = null;
+
+/**
+ * The key Privy signs access tokens with (ES256). Preferred: the PEM
+ * "Verification key" from Privy Dashboard > Configuration > App settings,
+ * set as PRIVY_VERIFICATION_KEY. Fallback: Privy's per-app JWKS endpoint.
+ */
+async function getVerifier() {
+  if (verifier) return verifier;
+  const pem = process.env.PRIVY_VERIFICATION_KEY?.replace(/\\n/g, "\n").trim();
+  verifier = pem
+    ? await importSPKI(pem, "ES256")
+    : createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${config.privyAppId}/jwks.json`));
+  return verifier;
+}
 
 /** Verifies a Privy access token and returns the Privy user id (DID). */
 export async function verifyPrivyAccessToken(token: string): Promise<string> {
   if (!config.privyAppId) throw new ApiFailure("BAD_REQUEST", "Privy is not configured.");
-  jwks ??= createRemoteJWKSet(
-    new URL(`https://auth.privy.io/api/v1/apps/${config.privyAppId}/jwks.json`),
-  );
   try {
-    const { payload } = await jwtVerify(token, jwks, {
+    const key = await getVerifier();
+    const { payload } = await jwtVerify(token, key as CryptoKey, {
       issuer: "privy.io",
       audience: config.privyAppId,
     });
@@ -46,7 +58,8 @@ export async function resolvePrivyUser(
     }
     return claimed;
   }
-  const res = await fetch(`https://auth.privy.io/api/v1/users/${encodeURIComponent(userId)}`, {
+  // Privy REST API: GET https://api.privy.io/v1/users/{user_id}, Basic auth app ID : app secret.
+  const res = await fetch(`https://api.privy.io/v1/users/${encodeURIComponent(userId)}`, {
     headers: {
       Authorization: `Basic ${Buffer.from(`${config.privyAppId}:${secret}`).toString("base64")}`,
       "privy-app-id": config.privyAppId,

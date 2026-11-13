@@ -15,6 +15,8 @@ import { ApiFailure } from "./errors";
 import { compareVenues, EXAMPLE_FEE_BPS } from "./routing";
 import type { Session } from "./session";
 import { signAndSubmit } from "./signer";
+import { getAccountStatus } from "./stellar";
+import { checkDestination, refuseInTestnet, startTestnetSend, usdcBalance } from "./testnet";
 import { newId, wallet, type WalletState } from "./store";
 
 /**
@@ -95,7 +97,12 @@ export function log(w: WalletState, a: Omit<Activity, "id" | "at">) {
 
 // ---------- Reads ----------
 
-export function getBalances(s: Session): Balances {
+export async function getBalances(s: Session): Promise<Balances> {
+  if (config.moneyMode === "testnet") {
+    // Real USDC from Horizon. Naira isn't on testnet: the on-ramp isn't connected.
+    const st = await getAccountStatus(s.address).catch(() => null);
+    return { NGN: 0, USDC: st?.usdc ?? 0 };
+  }
   return { ...wallet(s.userId).balances };
 }
 
@@ -115,6 +122,7 @@ export function getPaymentLinks(s: Session): PaymentLink[] {
 
 /** Refuse a swap up front when it can't fit the caps or the balance. */
 export function precheckSwap(s: Session, from: Currency, amountIn: number) {
+  refuseInTestnet("Swaps");
   const w = wallet(s.userId);
   checkLimits(w, from, amountIn);
   checkBalance(w, from, amountIn);
@@ -158,6 +166,7 @@ export async function getQuote(
 }
 
 export async function approveSwap(s: Session, input: { quoteId: string; approve: unknown }) {
+  refuseInTestnet("Swaps");
   const w = wallet(s.userId);
   const quote = w.quotes.get(String(input.quoteId));
   if (!quote) throw new ApiFailure("QUOTE_NOT_FOUND", "That quote doesn't exist. Ask for a new one.", 404);
@@ -204,12 +213,18 @@ export function cancelQuote(s: Session, quoteId: string) {
 // ---------- Send ----------
 
 function findContact(w: WalletState, name: string) {
-  const n = name.trim().toLowerCase();
+  const raw = name.trim();
+  // A raw Stellar address works as a recipient too.
+  if (/^G[A-Z2-7]{55}$/.test(raw)) {
+    const saved = w.contacts.find((c) => c.address === raw);
+    return saved ?? { name: `${raw.slice(0, 4)}…${raw.slice(-4)}`, address: raw };
+  }
+  const n = raw.toLowerCase();
   return w.contacts.find((c) => c.name.toLowerCase() === n);
 }
 
 /** Step 1: build a preview. Refuses up front if it can't be within limits. */
-export function previewSend(s: Session, input: { to: string; amount: number; asset?: Currency }): SendIntent {
+export async function previewSend(s: Session, input: { to: string; amount: number; asset?: Currency }): Promise<SendIntent> {
   const w = wallet(s.userId);
   const asset: Currency = input.asset ?? "USDC";
   if (asset !== "USDC") throw new ApiFailure("BAD_REQUEST", "Sends are in USDC for now.");
@@ -222,9 +237,21 @@ export function previewSend(s: Session, input: { to: string; amount: number; ass
       404,
     );
   }
-  const fee = EXAMPLE_SEND_FEE;
+  const testnet = config.moneyMode === "testnet";
+  // On testnet the network fee is paid in test XLM, not USDC.
+  const fee = testnet ? 0 : EXAMPLE_SEND_FEE;
   checkLimits(w, asset, amount);
-  checkBalance(w, asset, amount + fee);
+  let balanceBefore = w.balances[asset];
+  if (testnet) {
+    balanceBefore = await usdcBalance(s);
+    if (amount > balanceBefore) {
+      throw new ApiFailure("INSUFFICIENT_BALANCE", `You don't have enough USDC. Your testnet balance is ${usdc(balanceBefore)}.`, 403);
+    }
+    if (contact.address === s.address) throw new ApiFailure("BAD_REQUEST", "That's your own wallet.");
+    await checkDestination(contact.address, contact.name);
+  } else {
+    checkBalance(w, asset, amount + fee);
+  }
   const limits = limitsFor(w);
   const intent: SendIntent = {
     id: newId("snd"),
@@ -233,7 +260,7 @@ export function previewSend(s: Session, input: { to: string; amount: number; ass
     amount,
     fee,
     total: amount + fee,
-    balanceBefore: w.balances[asset],
+    balanceBefore,
     dailyRemainingAfter: limits.remainingToday[asset] - amount,
     dailyLimit: limits.daily[asset],
     perPaymentCap: limits.perPayment[asset],
@@ -259,6 +286,10 @@ export async function createSend(s: Session, input: { intentId: string; approve:
   if (input.approve !== true) {
     throw new ApiFailure("NOT_APPROVED", "Nothing was sent. A payment only goes ahead when you confirm it.", 403);
   }
+  if (config.moneyMode === "testnet") {
+    // Builds the real transaction; the user's wallet signs it next.
+    return startTestnetSend(s, intent);
+  }
   checkLimits(w, intent.asset, intent.amount);
   checkBalance(w, intent.asset, intent.total);
 
@@ -278,7 +309,7 @@ export async function createSend(s: Session, input: { intentId: string; approve:
     status: "done",
     txRef: signed.txRef,
   });
-  return { intent, activity: entry, balances: { ...w.balances }, mock: signed.mock };
+  return { status: "done" as const, intent, activity: entry, balances: { ...w.balances }, mock: signed.mock };
 }
 
 export function cancelSend(s: Session, intentId: string) {

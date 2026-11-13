@@ -1,5 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
+import { config } from "./config";
 import type {
   Activity,
   AllowedSite,
@@ -22,7 +23,18 @@ import type {
 
 export type Contact = { name: string; address: string };
 
+export type PendingTx = {
+  id: string;
+  kind: "send" | "trustline";
+  xdr: string;
+  hash: string;
+  intentId?: string;
+  expiresAt: number;
+  status: "pending" | "submitted" | "failed";
+};
+
 export type WalletState = {
+  pendingTx: Map<string, PendingTx>;
   balances: Balances;
   /** Lagos calendar day the spend counters belong to, YYYY-MM-DD. */
   spentDay: string;
@@ -60,6 +72,25 @@ function exampleAddress(name: string) {
 // Fictional example figures, matching the design mockups.
 const T = (iso: string) => Date.parse(iso);
 
+/** Testnet mode starts empty: real balances come from Horizon, no example rows. */
+function seedTestnet(): WalletState {
+  return {
+    pendingTx: new Map(),
+    balances: { NGN: 0, USDC: 0 },
+    spentDay: lagosDay(),
+    spentToday: { NGN: 0, USDC: 0 },
+    activity: [],
+    quotes: new Map(),
+    sends: new Map(),
+    links: [],
+    contacts: config.testnetContacts.map((c) => ({ ...c })),
+    kycStatus: "none",
+    allowList: [],
+    siteRequests: new Map(),
+    siteActions: new Map(),
+  };
+}
+
 function seed(): WalletState {
   const activity: Activity[] = [
     { id: newId("act"), at: T("2026-11-12T17:42:00Z"), kind: "swap", detail: "₦50,000 → 31.20 USDC · Aquarius", amount: "31.20 USDC", status: "done", txRef: "example" },
@@ -69,6 +100,7 @@ function seed(): WalletState {
     { id: newId("act"), at: T("2026-11-10T13:02:00Z"), kind: "swap", detail: "20 USDC → ₦31,980 · SDEX", amount: "₦31,980", status: "done", txRef: "example" },
   ];
   return {
+    pendingTx: new Map(),
     balances: { NGN: 182_450_00, USDC: 248_60 },
     spentDay: lagosDay(),
     spentToday: { NGN: 84_000_00, USDC: 0 },
@@ -106,7 +138,7 @@ function seed(): WalletState {
 export function wallet(userId: string): WalletState {
   let w = store.get(userId);
   if (!w) {
-    w = seed();
+    w = config.moneyMode === "testnet" ? seedTestnet() : seed();
     store.set(userId, w);
   }
   const today = lagosDay();

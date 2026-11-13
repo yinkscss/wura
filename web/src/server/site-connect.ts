@@ -7,6 +7,7 @@ import { ApiFailure } from "./errors";
 import { checkBalance, checkLimits, limitsFor, log } from "./money";
 import type { Session } from "./session";
 import { signAndSubmit } from "./signer";
+import { refuseInTestnet } from "./testnet";
 import { encodeContractId } from "./strkey";
 import { newId, wallet, type WalletState } from "./store";
 
@@ -242,6 +243,7 @@ export type ConnectResult =
 
 /** "Connect to this site and buy X." */
 export function requestSiteConnect(s: Session, input: { url: string; want?: string }): ConnectResult {
+  refuseInTestnet("Site payments");
   const w = wallet(s.userId);
   const { host, url } = parseSite(input.url);
   requireExampleSite(host);

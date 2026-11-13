@@ -3,15 +3,16 @@ import { getActivity, getBalances, getLimits, getPaymentLinks } from "@/server/m
 import { authed } from "@/server/route";
 import { wallet } from "@/server/store";
 
-export const GET = authed((s) => ({
+export const GET = authed(async (s) => ({
   me: {
     email: s.email,
     address: s.address,
     authMode: config.authMode,
     moneyMode: config.moneyMode,
+    signer: config.moneyMode === "mock" ? "mock" : config.testnetSigner,
     kycStatus: wallet(s.userId).kycStatus,
   },
-  balances: getBalances(s),
+  balances: await getBalances(s),
   limits: getLimits(s),
   activity: getActivity(s),
   links: getPaymentLinks(s),

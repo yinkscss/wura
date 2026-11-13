@@ -3,11 +3,12 @@
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Gauge } from "@/components/gauge";
+import { TestnetWalletCard } from "@/components/testnet-wallet";
 import { useOverview } from "@/components/overview";
 import { useAnimatedNumber } from "@/components/use-animated-number";
 import { ButtonLink, Card } from "@/components/ui";
 import { ActivityTable, ConnectedApps, PageHeader, SkeletonBlock, StatCard } from "@/components/wallet-parts";
-import { naira, usdc, usdcNumber } from "@/lib/format";
+import { money, naira, usdc, usdcNumber } from "@/lib/format";
 
 function greeting(h: number) {
   if (h < 12) return "Good morning";
@@ -40,13 +41,19 @@ export default function WalletPage() {
   }, []);
 
   const l = data?.limits;
-  const usedFrac = l ? l.spentToday.NGN / l.daily.NGN : 0;
+  // On testnet only USDC moves, so the dashboard shows USDC limits first.
+  const cur = data?.me.moneyMode === "testnet" ? "USDC" : "NGN";
+  const usedFrac = l ? l.spentToday[cur] / l.daily[cur] : 0;
 
   return (
     <div className="mx-auto flex max-w-[1240px] flex-col gap-7 px-5 py-8 sm:px-8 lg:px-11 lg:py-10">
       <PageHeader
         title={hello}
-        sub="Example balances and limits, for a single wallet."
+        sub={
+          data?.me.moneyMode === "testnet"
+            ? "Your Stellar testnet wallet. Limits are example amounts."
+            : "Example balances and limits, for a single wallet."
+        }
         actions={
           <>
             <ButtonLink href="/onboarding" variant="outline-blue">Fund</ButtonLink>
@@ -57,9 +64,14 @@ export default function WalletPage() {
 
       {error && <Card className="p-5 text-[14px] text-pink-deep">{error}</Card>}
 
+      <TestnetWalletCard />
+
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         <motion.div {...rise(0)}>
-          <StatCard label="Naira balance" foot="Available to swap or send">
+          <StatCard
+            label="Naira balance"
+            foot={data?.me.moneyMode === "testnet" ? "Naira on-ramp isn’t connected yet" : "Available to swap or send"}
+          >
             <div className="nums text-[38px] font-bold leading-none tracking-[-0.045em]">
               {data ? <AnimatedNaira minor={data.balances.NGN} /> : <SkeletonBlock className="h-10 w-44" />}
             </div>
@@ -90,17 +102,23 @@ export default function WalletPage() {
               </div>
             </div>
             <div className="mt-auto text-[13.5px] text-white/90">
-              {l ? `${naira(l.spentToday.NGN)} of ${naira(l.daily.NGN)} used` : "…"}
+              {l ? `${money(l.spentToday[cur], cur)} of ${money(l.daily[cur], cur)} used` : "…"}
             </div>
           </div>
         </motion.div>
         <motion.div {...rise(3)}>
           <StatCard
             label="Per-payment cap"
-            foot={l ? `Also ${usdc(l.perPayment.USDC)} on dollar sends · example` : "…"}
+            foot={
+              l
+                ? cur === "USDC"
+                  ? `Also ${naira(l.perPayment.NGN)} on naira payments · example`
+                  : `Also ${usdc(l.perPayment.USDC)} on dollar sends · example`
+                : "…"
+            }
           >
             <div className="nums text-[38px] font-bold leading-none tracking-[-0.045em]">
-              {l ? naira(l.perPayment.NGN) : <SkeletonBlock className="h-10 w-40" />}
+              {l ? money(l.perPayment[cur], cur) : <SkeletonBlock className="h-10 w-40" />}
             </div>
           </StatCard>
         </motion.div>
