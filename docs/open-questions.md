@@ -29,3 +29,7 @@ The product name is **Wura**. Older design screenshots still show an “Agent”
 ## Site connect
 
 The approach is decided and written up in [Site connect](site-connect.md): allow list first, then scraper / contract discovery as the primary path, WalletConnect as a complement, and a hosted browser only later. What is still open is which first Stellar sites the demo should try, and how much contract verification is realistic in the time available.
+
+## Wallet after the buildathon
+
+The buildathon uses Privy. The plan afterwards is Wura's own passkey smart wallet, written up in [Wallet roadmap](wallet-roadmap.md). Still open: whether exchanges and Paycrest can pay to and from `C…` smart-wallet addresses, how recovery works for a lost phone, and Wura's final domain (passkeys are tied to it).

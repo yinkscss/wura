@@ -136,6 +136,8 @@ Naira funding would use Paycrest for on-ramping. USDC funding needs no identity 
 
 *(Soroban is on the list because the routing layer will quote Soroswap and Aquarius, which are Soroban venues, as well as SDEX. The first version uses a classic Stellar account, not a passkey or smart wallet. Passkeys / smart wallets are a later option, not this buildathon’s default sign-in.)*
 
+*(Roadmap, for the pitch rather than this form: after the buildathon Wura plans to move from Privy to its own passkey-controlled Soroban smart wallet, so the per-payment and daily caps for Wura’s agent key are enforced by the wallet contract itself. See [Wallet roadmap](wallet-roadmap.md).)*
+
 ### 18. Link to the Project Repository *(optional, short)*
 
 https://github.com/yinkscss/stellar-money-agent

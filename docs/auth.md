@@ -4,6 +4,12 @@ The product needs a sign-in that feels like a normal app: the user enters an ema
 
 This note is the recommendation for the Stellar Nigeria Buildathon (applications close 21 November 2026). It is based on official docs, checked in November 2026, plus a search of recent posts on X. Nothing here has been implemented yet.
 
+## Decision
+
+**For the buildathon, Wura uses Privy.** This was decided in November 2026. Privy's free tier is reported as up to 499 monthly active users and 50,000 signatures a month, which covers the buildathon and early pilots (confirm on Privy's pricing page).
+
+After the buildathon, the direction is Wura's own wallet layer: email sign-in we run ourselves, plus a passkey-controlled Stellar smart wallet with spending limits enforced by the wallet contract. That plan, its open problems and the migration path are in [Wallet roadmap](wallet-roadmap.md).
+
 ## Recommendation
 
 **Use Privy: email one-time code, then create a Stellar embedded wallet.**
@@ -43,7 +49,7 @@ How it works:
 - **Wallet:** one Stellar `G…` address per email.
 - **Approvals:** the agent never signs until the user confirms the preview, even if a session key exists.
 - **Limits:** enforce per-payment and daily caps in our API; add a scoped server/delegated signer for Telegram, WhatsApp and MCP.
-- **Optional later:** passkeys (smart-account-kit) and “Connect Freighter” for advanced users.
+- **Later:** Wura's own passkey smart wallet (see [Wallet roadmap](wallet-roadmap.md)), and “Connect Freighter” for advanced users.
 
 ## Sources
 
