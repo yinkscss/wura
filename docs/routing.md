@@ -1,6 +1,6 @@
 # Routing
 
-The point of the money agent is not only that you can chat with it. It should also compare rates and give you the best one, then show that rate clearly before you approve.
+The point of Wura is not only that you can chat with it. It should also compare rates and give you the best one, then show that rate clearly before you approve.
 
 ## The agent's own routing layer
 

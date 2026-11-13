@@ -1,6 +1,8 @@
 # Interface designs
 
-Placeholder product name: **Agent** (the public name is not chosen yet). These are static HTML/CSS mockups, rendered to PNG. They are not a live product. Example balances, rates and payments in the screens are fictional preview data for a single wallet. Do not treat them as traction, users or revenue.
+The product name is **Wura**. These are static HTML/CSS mockups, rendered to PNG. They are not a live product. Example balances, rates and payments in the screens are fictional preview data for a single wallet. Do not treat them as traction, users or revenue.
+
+The wordmark in the app should read **Wura**. The HTML sources and the rendered PNGs in this folder still show the old “Agent” / “name TBD” placeholder. Those shots have not been re-rendered.
 
 ## Style
 

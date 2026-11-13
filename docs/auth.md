@@ -39,7 +39,7 @@ How it works:
 
 ## Suggested buildathon shape
 
-- **Web sign-in:** Privy email OTP, styled like the rest of the Agent UI (see [design/README.md](../design/README.md)).
+- **Web sign-in:** Privy email OTP, styled like the rest of the Wura UI (see [design/README.md](../design/README.md)).
 - **Wallet:** one Stellar `G…` address per email.
 - **Approvals:** the agent never signs until the user confirms the preview, even if a session key exists.
 - **Limits:** enforce per-payment and daily caps in our API; add a scoped server/delegated signer for Telegram, WhatsApp and MCP.

@@ -24,4 +24,8 @@ The intent is to store a verified status, not to keep asking for the NIN. Exactl
 
 ## Product name
 
-"Money agent" is the working name used in these docs. The public name, if it is different, has not been chosen.
+The product name is **Wura**. Older design screenshots still show an “Agent” / “name TBD” wordmark; those PNGs have not been re-rendered.
+
+## Site connect
+
+The approach is decided and written up in [Site connect](site-connect.md): allow list first, then scraper / contract discovery as the primary path, WalletConnect as a complement, and a hosted browser only later. What is still open is which first Stellar sites the demo should try, and how much contract verification is realistic in the time available.

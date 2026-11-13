@@ -1,6 +1,6 @@
-# Agent — web app (v1)
+# Wura — web app (v1)
 
-The first web app for **Agent**, a money assistant you chat with. **"Agent" is a working name.** The public product name hasn't been chosen.
+The first web app for **Wura**, a money assistant you chat with. The product name is **Wura**. Some screens and the older design shots may still show an “Agent” / “name TBD” wordmark until those are renamed.
 
 This is a Stellar Nigeria Buildathon preview. **Nothing is live.** There are no users, no revenue and no real transactions. Every balance, rate and payment shown is fictional example data, taken from the design mockups in [`../design`](../design/README.md).
 

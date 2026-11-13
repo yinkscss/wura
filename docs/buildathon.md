@@ -25,6 +25,8 @@ Visible safety, not a hidden setting:
 
 Trading, small-business or SEO skills are not in this scope.
 
+Connecting to other blockchain sites, described in [Site connect](site-connect.md), is a scoped stretch skill: allow list first, then discover and call the Soroban contract, with WalletConnect as a complement. It is not one of the three skills the core demo has to show end to end.
+
 ## Demo flow
 
 A judge or reviewer should be able to follow this path:
