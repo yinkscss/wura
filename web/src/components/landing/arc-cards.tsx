@@ -46,7 +46,7 @@ function CardTitle({ children, light }: { children: ReactNode; light?: boolean }
   );
 }
 
-/* ---------------- In chat: types out a request, then the agent replies ---------------- */
+/* ---------------- In chat: types out a request, then Wura replies ---------------- */
 
 const SCENES: Array<{ user: string; agent: ReactNode }> = [
   {

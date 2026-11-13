@@ -6,11 +6,11 @@ export function cx(...c: Array<string | false | null | undefined>) {
   return c.filter(Boolean).join(" ");
 }
 
-/** Placeholder wordmark: "Agent" + small "name TBD". */
+/** Wura wordmark. */
 export function Wordmark({ tone = "dark", href = "/" }: { tone?: "dark" | "light"; href?: string }) {
   const onBlue = tone === "dark";
   return (
-    <Link href={href} className="group flex items-center gap-2.5" aria-label="Agent, home">
+    <Link href={href} className="group flex items-center gap-2.5" aria-label="Wura, home">
       <span
         className={cx(
           "grid size-8 place-items-center rounded-[9px] transition-transform duration-300 group-hover:rotate-[20deg]",
@@ -20,15 +20,7 @@ export function Wordmark({ tone = "dark", href = "/" }: { tone?: "dark" | "light
         <SparkIcon size={16} />
       </span>
       <span className={cx("text-[17px] font-bold leading-none tracking-[-0.03em]", onBlue ? "text-white" : "text-blue")}>
-        Agent
-      </span>
-      <span
-        className={cx(
-          "ml-0.5 text-[9px] font-medium uppercase tracking-[0.08em]",
-          onBlue ? "text-white/55" : "text-muted/60",
-        )}
-      >
-        name TBD
+        Wura
       </span>
     </Link>
   );

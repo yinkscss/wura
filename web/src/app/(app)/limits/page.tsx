@@ -50,7 +50,7 @@ export default function LimitsPage() {
         </div>
         <ul className="flex flex-col gap-2.5 text-[15px] text-muted">
           <li>· The server checks every swap and send against the per-payment cap and what’s left of today’s cap, before anything is signed.</li>
-          <li>· If a request would go over, the agent stops and tells you. It doesn’t try to send it.</li>
+          <li>· If a request would go over, Wura stops and tells you. It doesn’t try to send it.</li>
           <li>· Even inside your limits, nothing moves until you approve the preview.</li>
           <li>· Counters reset at midnight, Lagos time.</li>
         </ul>

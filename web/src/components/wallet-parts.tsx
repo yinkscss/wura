@@ -6,7 +6,7 @@ import { when } from "@/lib/format";
 import { ChatIcon } from "./icons";
 import { Card, Pill, cx } from "./ui";
 
-const KIND_LABEL: Record<Activity["kind"], string> = { swap: "Swap", send: "Send", link: "Link", fund: "Fund" };
+const KIND_LABEL: Record<Activity["kind"], string> = { swap: "Swap", send: "Send", link: "Link", fund: "Fund", site: "Site" };
 
 export function ActivityTable({ rows, limit }: { rows: Activity[]; limit?: number }) {
   const list = limit ? rows.slice(0, limit) : rows;

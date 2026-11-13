@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const VERSION_ACCOUNT_ID = 6 << 3; // 'G'
+const VERSION_CONTRACT = 2 << 3; // 'C'
 
 function crc16xmodem(bytes: Uint8Array) {
   let crc = 0;
@@ -35,9 +36,18 @@ function base32(bytes: Uint8Array) {
 }
 
 export function encodeAccountId(publicKey: Uint8Array) {
-  if (publicKey.length !== 32) throw new Error("ed25519 public key must be 32 bytes");
+  return encode(VERSION_ACCOUNT_ID, publicKey);
+}
+
+/** C… contract address from a 32-byte contract id. */
+export function encodeContractId(id: Uint8Array) {
+  return encode(VERSION_CONTRACT, id);
+}
+
+function encode(version: number, publicKey: Uint8Array) {
+  if (publicKey.length !== 32) throw new Error("key must be 32 bytes");
   const payload = new Uint8Array(33);
-  payload[0] = VERSION_ACCOUNT_ID;
+  payload[0] = version;
   payload.set(publicKey, 1);
   const crc = crc16xmodem(payload);
   const full = new Uint8Array(35);

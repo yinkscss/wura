@@ -6,7 +6,7 @@ import { CheckIcon, CopyIcon, OutIcon } from "@/components/icons";
 import { copyText } from "@/components/money-cards";
 import { useOverview } from "@/components/overview";
 import { usePrivyLogout } from "@/components/providers";
-import { Button, Card } from "@/components/ui";
+import { Button, ButtonLink, Card } from "@/components/ui";
 import { PageHeader, SkeletonBlock } from "@/components/wallet-parts";
 
 export default function SettingsPage() {
@@ -69,6 +69,13 @@ export default function SettingsPage() {
             </div>
           ))}
         </dl>
+      </Card>
+      <Card className="flex flex-wrap items-center justify-between gap-4 p-6 shadow-soft sm:p-7">
+        <div>
+          <h2 className="text-[18px] font-bold tracking-[-0.03em]">Connected sites</h2>
+          <p className="text-[14px] text-muted">Sites Wura may connect to without asking first. It still can’t sign without you.</p>
+        </div>
+        <ButtonLink href="/settings/sites" variant="outline-blue">Manage sites</ButtonLink>
       </Card>
       <Card className="flex flex-wrap items-center justify-between gap-4 p-6 shadow-soft sm:p-7">
         <div>

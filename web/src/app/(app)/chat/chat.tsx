@@ -10,7 +10,8 @@ import { useOverview } from "@/components/overview";
 import { Button, Card, cx } from "@/components/ui";
 import { api, ClientApiError } from "@/lib/api";
 import { naira, usdc, usdcNumber } from "@/lib/format";
-import type { AgentCard, AgentReply, Quote, SendIntent } from "@/lib/types";
+import type { AgentCard, AgentReply, Quote, SendIntent, SiteAction, SiteConnectRequest } from "@/lib/types";
+import { SiteActionCard, SitePermissionCard } from "@/components/site-cards";
 
 type Msg =
   | { id: string; role: "user"; text: string }
@@ -22,6 +23,7 @@ const SUGGESTIONS = [
   "Make a payment link for ₦15,000",
   "How much do I have left?",
   "What’s the best rate right now?",
+  "Connect to market.example.org and buy 2 posters",
 ];
 
 let seq = 0;
@@ -134,7 +136,42 @@ export function Chat() {
     patch(msgId, { state: "cancelled" });
     if (card.type === "quote") await api("/api/swap/cancel", { quoteId: card.quote.id }).catch(() => {});
     if (card.type === "send") await api("/api/send/cancel", { intentId: card.intent.id }).catch(() => {});
-    say("Cancelled. Nothing was sent.");
+    if (card.type === "site-action") await api("/api/sites/cancel", { actionId: card.action.id }).catch(() => {});
+    say(card.type === "site-action" ? "Cancelled. Nothing was signed." : "Cancelled. Nothing was sent.");
+  }
+
+  // Answer to "Connect to this site?"
+  async function answerSite(msgId: string, request: SiteConnectRequest, connect: boolean, remember: boolean) {
+    patch(msgId, { state: "busy" });
+    setThinking(connect);
+    try {
+      const [reply] = await Promise.all([
+        api<AgentReply>("/api/sites/respond", { requestId: request.id, connect, remember }),
+        new Promise((r) => setTimeout(r, connect ? 900 : 200)),
+      ]);
+      patch(msgId, { state: connect ? "done" : "cancelled" });
+      setMsgs((m) => [...m, { id: uid(), role: "agent", text: reply.text, card: reply.card, state: "pending", prompt: request.want ? `Connect to ${request.host} and buy ${request.want}` : `Connect to ${request.host}` }]);
+    } catch (e) {
+      const err = e as ClientApiError;
+      patch(msgId, { state: connect ? "done" : "cancelled" });
+      say(err.message ?? "That didn't work. Nothing was sent.", { type: "refused", code: err.code, title: "Not connected", lines: [] });
+    } finally {
+      setThinking(false);
+    }
+  }
+
+  async function approveSite(msgId: string, action: SiteAction) {
+    patch(msgId, { state: "busy" });
+    try {
+      const res = await api<{ activity: { txRef?: string }; mock: boolean }>("/api/sites/approve", { actionId: action.id, approve: true });
+      patch(msgId, { state: "done" });
+      say(`Signed. ${action.summary}. Reference ${res.activity.txRef}${res.mock ? " (mock — nothing was broadcast)" : ""}.`);
+      void refresh();
+    } catch (e) {
+      const err = e as ClientApiError;
+      patch(msgId, { state: "error" });
+      say(err.message ?? "That didn't go through. Nothing was signed.", { type: "refused", code: err.code, title: "Not signed", lines: [] });
+    }
   }
 
   function onSubmit(e: FormEvent) {
@@ -156,7 +193,7 @@ export function Chat() {
           <Link href="/wallet" aria-label="Back to wallet" className="grid size-10 place-items-center rounded-full hover:bg-white">
             <BackIcon size={20} />
           </Link>
-          <div className="text-center text-[19px] font-bold tracking-[-0.03em]">Agent</div>
+          <div className="text-center text-[19px] font-bold tracking-[-0.03em]">Wura</div>
           <div className="flex justify-end">
             <button
               onClick={() => setShowNgn((v) => !v)}
@@ -228,6 +265,8 @@ export function Chat() {
                       onCancel={(c) => cancel(m.id, c)}
                       onRetry={() => m.prompt && send(m.prompt)}
                       onSay={send}
+                      onSiteAnswer={(r, c, k) => answerSite(m.id, r, c, k)}
+                      onSiteApprove={(a) => approveSite(m.id, a)}
                     />
                   </motion.div>
                 )}
@@ -236,7 +275,7 @@ export function Chat() {
           )}
 
           {thinking && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2.5" aria-label="Agent is typing">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2.5" aria-label="Wura is typing">
               <span className="grid size-8 place-items-center rounded-[10px] bg-blue text-white">
                 <SparkIcon size={14} />
               </span>
@@ -266,12 +305,12 @@ export function Chat() {
             ))}
           </div>
           <form onSubmit={onSubmit} className="flex items-center gap-2 rounded-full bg-white p-2 pl-6 shadow-[0_8px_30px_rgba(8,49,141,0.08)]">
-            <label htmlFor="chat-input" className="sr-only">Message Agent</label>
+            <label htmlFor="chat-input" className="sr-only">Message Wura</label>
             <input
               id="chat-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Message Agent"
+              placeholder="Message Wura"
               autoComplete="off"
               className="min-w-0 flex-1 bg-transparent text-[16px] text-blue outline-none placeholder:text-soft"
             />
@@ -297,8 +336,12 @@ function CardFor({
   onCancel,
   onRetry,
   onSay,
+  onSiteAnswer,
+  onSiteApprove,
 }: {
   msg: Extract<Msg, { role: "agent" }>;
+  onSiteAnswer: (r: SiteConnectRequest, connect: boolean, remember: boolean) => void;
+  onSiteApprove: (a: SiteAction) => void;
   onApprove: (q: Quote) => void;
   onConfirm: (i: SendIntent) => void;
   onCancel: (c: AgentCard) => void;
@@ -361,6 +404,29 @@ function CardFor({
             Left to spend today: <b className="text-blue">{naira(card.limits.remainingToday.NGN)}</b> and{" "}
             <b className="text-blue">{usdc(card.limits.remainingToday.USDC)}</b>. Example limits.
           </div>
+        </Card>
+      );
+    case "site-permission":
+      return (
+        <Card className={shell}>
+          <SitePermissionCard
+            request={card.request}
+            siteName={card.siteName}
+            state={state}
+            onAnswer={(c, k) => onSiteAnswer(card.request, c, k)}
+          />
+        </Card>
+      );
+    case "site-action":
+      return (
+        <Card className={shell}>
+          <SiteActionCard
+            action={card.action}
+            state={state}
+            onApprove={() => onSiteApprove(card.action)}
+            onCancel={() => onCancel(card)}
+            onRefresh={onRetry}
+          />
         </Card>
       );
     case "refused":
