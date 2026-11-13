@@ -10,12 +10,13 @@ import { useOverview } from "@/components/overview";
 import { Button, Card, cx } from "@/components/ui";
 import { api, ClientApiError } from "@/lib/api";
 import { naira, usdc, usdcNumber } from "@/lib/format";
-import type { AgentCard, AgentReply, Quote, SendIntent, SiteAction, SiteConnectRequest } from "@/lib/types";
+import type { AgentCard, AgentReply, NeedsSignature, Quote, SendIntent, SiteAction, SiteConnectRequest } from "@/lib/types";
+import { useCompleteSigning } from "@/lib/signing";
 import { SiteActionCard, SitePermissionCard } from "@/components/site-cards";
 
 type Msg =
   | { id: string; role: "user"; text: string }
-  | { id: string; role: "agent"; text: string; card?: AgentCard; state?: CardState; prompt?: string };
+  | { id: string; role: "agent"; text: string; card?: AgentCard; state?: CardState; prompt?: string; href?: string };
 
 const SUGGESTIONS = [
   "Change ₦50,000 to dollars",
@@ -50,9 +51,10 @@ export function Chat() {
     setMsgs((m) => m.map((x) => (x.id === id && x.role === "agent" ? { ...x, ...p } : x)));
   }, []);
 
-  const say = useCallback((text: string, card?: AgentCard) => {
-    setMsgs((m) => [...m, { id: uid(), role: "agent", text, card }]);
+  const say = useCallback((text: string, card?: AgentCard, href?: string) => {
+    setMsgs((m) => [...m, { id: uid(), role: "agent", text, card, href }]);
   }, []);
+  const completeSigning = useCompleteSigning();
 
   const send = useCallback(
     async (text: string) => {
@@ -118,12 +120,17 @@ export function Chat() {
   async function confirmSend(msgId: string, intent: SendIntent) {
     patch(msgId, { state: "busy" });
     try {
-      const res = await api<{ activity: { txRef?: string }; mock: boolean }>("/api/send/confirm", {
-        intentId: intent.id,
-        approve: true,
-      });
+      type Done = { activity: { txRef?: string; explorerUrl?: string }; mock: boolean };
+      // On testnet with Privy this returns needs_signature: the wallet signs, then we submit.
+      const res = await completeSigning<Done>(
+        await api<Done | NeedsSignature>("/api/send/confirm", { intentId: intent.id, approve: true }),
+      );
       patch(msgId, { state: "done" });
-      say(`Sent ${usdc(intent.amount)} to ${intent.to.name}. Reference ${res.activity.txRef}${res.mock ? " (mock — nothing was broadcast)" : ""}.`);
+      if (res.mock) {
+        say(`Sent ${usdc(intent.amount)} to ${intent.to.name}. Reference ${res.activity.txRef} (mock — nothing was broadcast).`);
+      } else {
+        say(`Sent ${usdc(intent.amount)} to ${intent.to.name} on Stellar testnet.`, undefined, res.activity.explorerUrl);
+      }
       void refresh();
     } catch (e) {
       const err = e as ClientApiError;
@@ -249,6 +256,11 @@ export function Chat() {
                   </span>
                   <div className="max-w-[85%] rounded-[22px] rounded-tl-md bg-white px-5 py-3 text-[16px] leading-snug shadow-[0_2px_10px_rgba(8,49,141,0.05)]">
                     {m.text}
+                    {m.href && (
+                      <a href={m.href} target="_blank" rel="noreferrer" className="mt-1.5 block text-[14px] font-semibold text-pink-deep underline underline-offset-2">
+                        View the transaction on Stellar Expert ↗
+                      </a>
+                    )}
                   </div>
                 </div>
                 {m.card && (

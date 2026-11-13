@@ -1,6 +1,7 @@
 import "server-only";
 import type { AgentReply } from "@/lib/types";
 import { money, naira, rate, usdc, usdcNumber } from "@/lib/format";
+import { config } from "./config";
 import { ApiFailure } from "./errors";
 import {
   createPaymentLink,
@@ -90,10 +91,12 @@ export async function handleMessage(s: Session, message: string): Promise<AgentR
       return { text: "Sends are in USDC for now. Try “Send $20 to Tunde”." };
     }
     const amt = parseAmount(m[1]);
-    const name = m[2].trim().replace(/\s+(please|now|today)$/, "");
+    // A pasted Stellar address (case-sensitive, so read it from the original text).
+    const addr = text.match(/\bG[A-Z2-7]{55}\b/)?.[0];
+    const name = addr ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : m[2].trim().replace(/\s+(please|now|today)$/, "");
     if (!amt) return { text: `How much do you want to send to ${name}?` };
     try {
-      const intent = previewSend(s, { to: name, amount: toMinor(amt), asset: "USDC" });
+      const intent = await previewSend(s, { to: addr ?? name, amount: toMinor(amt), asset: "USDC" });
       return {
         text: "Ready to send. This is within your limits — confirm to go ahead.",
         card: { type: "send", intent },
@@ -134,10 +137,10 @@ export async function handleMessage(s: Session, message: string): Promise<AgentR
 
   // Balance
   if (/\b(balance|how much|left|have|wallet)\b/.test(t)) {
-    const balances = getBalances(s);
+    const balances = await getBalances(s);
     const limits = getLimits(s);
     return {
-      text: `You have ${naira(balances.NGN)} and ${usdcNumber(balances.USDC)} USDC. You can still spend ${money(limits.remainingToday.NGN, "NGN")} and ${usdc(limits.remainingToday.USDC)} today.`,
+      text: `${config.moneyMode === "testnet" ? "On testnet you have" : "You have"} ${naira(balances.NGN)} and ${usdcNumber(balances.USDC)} USDC. You can still spend ${money(limits.remainingToday.NGN, "NGN")} and ${usdc(limits.remainingToday.USDC)} today.`,
       card: { type: "balance", balances, limits },
     };
   }

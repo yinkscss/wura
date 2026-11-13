@@ -8,5 +8,6 @@ export const GET = authed((s): Me => ({
   address: s.address,
   authMode: config.authMode,
   moneyMode: config.moneyMode,
+  signer: config.moneyMode === "mock" ? "mock" : config.testnetSigner,
   kycStatus: wallet(s.userId).kycStatus,
 }));

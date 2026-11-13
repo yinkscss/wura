@@ -38,10 +38,23 @@ export function ActivityTable({ rows, limit }: { rows: Activity[]; limit?: numbe
               <td className="py-[17px] pr-4">{KIND_LABEL[a.kind]}</td>
               <td className="py-[17px] pr-4">
                 {a.detail}
-                {a.txRef && a.txRef !== "example" && (
-                  <span className="ml-2 font-mono text-[11.5px] text-soft" title="Mock transaction reference">
-                    {a.txRef}
-                  </span>
+                {a.explorerUrl && a.txRef ? (
+                  <a
+                    href={a.explorerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-2 font-mono text-[11.5px] text-pink-deep underline underline-offset-2"
+                    title="View on Stellar Expert (testnet)"
+                  >
+                    {a.txRef.slice(0, 8)}…↗
+                  </a>
+                ) : (
+                  a.txRef &&
+                  a.txRef !== "example" && (
+                    <span className="ml-2 font-mono text-[11.5px] text-soft" title="Mock transaction reference">
+                      {a.txRef}
+                    </span>
+                  )
                 )}
               </td>
               <td className="nums whitespace-nowrap py-[17px] pr-4 font-bold">{a.amount}</td>

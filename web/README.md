@@ -37,6 +37,30 @@ Then open http://localhost:3000.
 
 To use real email codes, copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_PRIVY_APP_ID` and `SESSION_SECRET` (plus `PRIVY_APP_SECRET` for server-side wallet checks). In the Privy dashboard, enable email login. Money stays in mock mode either way.
 
+## Testnet mode (real transactions)
+
+`MONEY_MODE=testnet` makes **USDC sends real on Stellar testnet**. Swaps and site payments are refused in this mode until live quotes are wired; there's no real naira asset on testnet.
+
+How signing works (`src/server/testnet.ts`):
+
+1. The user approves the preview. The server re-checks limits and the real Horizon balance, then builds the transaction.
+2. The user's **Privy Stellar wallet signs the transaction hash** in the browser (`useSignRawHash`, Privy Tier 2).
+3. The server **verifies the signature belongs to the signed-in user's address**, re-checks limits and balance again, attaches it and submits to Horizon.
+4. The log stores the real transaction hash, linked to Stellar Expert.
+
+A wallet needs test XLM and a USDC trustline before it can hold USDC. The **Stellar testnet wallet** card on `/wallet` does both: Friendbot for XLM, then a trustline the user's wallet signs.
+
+**With Privy:** set `MONEY_MODE=testnet`, `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET` and `SESSION_SECRET`. Users get test USDC from Circle's faucet (https://faucet.circle.com, pick Stellar testnet).
+
+**Without Privy (local testing and team demos):** `TESTNET_SIGNER=server-dev` makes the server derive a throwaway testnet key per email and sign with it. It's custodial, testnet-only and meant for development. For example:
+
+```bash
+npm run testnet -- test-usdc            # prints STELLAR_USDC_ISSUER=… (a private test USDC)
+npm run testnet -- contacts Tunde Ada   # prints TESTNET_CONTACTS=…  (real testnet accounts)
+```
+
+Put both lines in `.env.local`, plus `MONEY_MODE=testnet`, `TESTNET_SIGNER=server-dev` and a 32+ character `SESSION_SECRET`. Sign in, click **Set up testnet wallet**, then mint test USDC to your address with `npm run testnet -- mint <address> 50`. Secrets for the helper accounts are saved in `web/.testnet/` (git-ignored). Testnet resets wipe all of this; rerun the commands if that happens.
+
 ## Deploy to Vercel
 
 1. Import the repository in Vercel.
@@ -75,7 +99,7 @@ Otherwise the API returns an error, and nothing is signed. The caps are **exampl
 
 - **Routing** (`src/server/routing.ts`): one adapter per venue (SDEX, Soroswap, Aquarius). Quotes are compared and the best is marked. v1 uses fixed example prices. A venue that can't be quoted is left out and reported, never given an invented rate. Set `MOCK_UNAVAILABLE_VENUES=soroswap` to see that path. There is no live StellarRoute dependency.
 - **Paycrest** (`src/server/paycrest.ts`): a mocked naira on-ramp order. It refuses without a passed identity check, keeps only the verified status (never the NIN), and applies an example trial cap. The UI does not promise a one-time NIN, because reuse isn't confirmed with Paycrest.
-- **Signer** (`src/server/signer.ts`): mock only. `MONEY_MODE=testnet` is refused until Privy Tier 2 signing is wired. The file also notes the future scoped session key for Telegram, WhatsApp and MCP.
+- **Signer** (`src/server/signer.ts`, `src/server/testnet.ts`): mock by default. In testnet mode, USDC sends are signed by the user's Privy wallet (or the dev key) and submitted to Horizon, as described above. `signer.ts` also notes the future scoped session key for Telegram, WhatsApp and MCP.
 - **Site connect** (`src/server/site-connect.ts`, routes under `/api/sites/*`): follows [`../docs/site-connect.md`](../docs/site-connect.md), mocked. A site that isn't on the allow list gets “Connect to this site?” first, with an option to add it. Then Wura runs the mocked discovery path: read the page, find the Soroban contract, check it's verified, read its interface, simulate, and show a signing preview. Signing goes through the same server-side approval, caps and log as a send. The allow list is permission to connect, never to sign. Only fictional sites on reserved example domains work in mock mode:
   - `market.example.org`: allowed by default; buy items at 12.50 USDC each
   - `tickets.example.com`: a 60 USDC ticket, refused by the example cap

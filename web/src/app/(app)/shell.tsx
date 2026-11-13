@@ -69,7 +69,7 @@ function PreviewBadge() {
   const mode = data?.me.moneyMode ?? "mock";
   return (
     <div className="rounded-2xl bg-white/[0.08] px-4 py-3">
-      <div className="text-[14px] font-semibold text-white">Example wallet</div>
+      <div className="text-[14px] font-semibold text-white">{mode === "mock" ? "Example wallet" : "Testnet wallet"}</div>
       <div className="text-[12.5px] text-white/70">
         {mode === "mock" ? "Preview data · not live" : "Stellar testnet"}
       </div>

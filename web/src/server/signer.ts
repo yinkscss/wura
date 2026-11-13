@@ -9,14 +9,14 @@ import { ApiFailure } from "./errors";
  * it has not expired or been used, it is within the per-payment and daily
  * caps, and the balance covers it.
  *
- * v1 is mock only: nothing is signed or broadcast, and the reference returned
- * is clearly marked MOCK.
+ * Mock mode: nothing is signed or broadcast, and the reference returned is
+ * clearly marked MOCK.
  *
- * Testnet path (not wired yet, gated by MONEY_MODE=testnet):
- *   1. Build the Stellar transaction (path payment / payment) on the server.
- *   2. Ask Privy to sign it with the user's Stellar wallet. Stellar is a Privy
- *      Tier 2 chain: Privy signs the hash, and we submit to Horizon ourselves.
- *   3. Submit to Horizon testnet and return the transaction hash.
+ * Testnet mode: real USDC sends don't come through here. They use the
+ * two-step flow in src/server/testnet.ts (build → the user's Privy wallet
+ * signs the hash → we verify, re-check and submit to Horizon). Swaps and site
+ * payments are refused on testnet before they reach this function, so the
+ * guard below only fires if something is mis-wired.
  *
  * Chat channels (Telegram, WhatsApp, MCP) — future, see docs/auth.md:
  *   The user signs in once on the web. We then add a scoped session signer on
@@ -40,7 +40,7 @@ export async function signAndSubmit(req: SignRequest): Promise<SignResult> {
     // Refuse rather than pretend. Wire the Privy Tier 2 signer before enabling.
     throw new ApiFailure(
       "SIGNING_UNAVAILABLE",
-      "Testnet signing is not wired in this version. Unset MONEY_MODE to use mock mode.",
+      "This action isn't live on testnet yet. Only USDC sends are real so far.",
       503,
     );
   }

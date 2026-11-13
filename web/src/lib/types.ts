@@ -92,6 +92,8 @@ export type Activity = {
   status: ActivityStatus;
   /** Mock or real transaction reference, when one exists. */
   txRef?: string;
+  /** Block explorer link for real (testnet) transactions. */
+  explorerUrl?: string;
 };
 
 export type KycStatus = "none" | "verified";
@@ -101,8 +103,26 @@ export type Me = {
   address: string;
   authMode: "privy" | "mock";
   moneyMode: "mock" | "testnet";
+  /** Who signs real testnet transactions. */
+  signer: "mock" | "privy" | "server-dev";
   kycStatus: KycStatus;
 };
+
+/** Testnet wallet readiness (MONEY_MODE=testnet). */
+export type WalletStatus = {
+  address: string;
+  network: "testnet";
+  exists: boolean;
+  xlm: string;
+  usdc: number | null;
+  hasTrustline: boolean;
+  ready: boolean;
+  usdcIssuer: string;
+  usingCircleUsdc: boolean;
+};
+
+/** A built transaction waiting for the user's wallet to sign its hash. */
+export type NeedsSignature = { status: "needs_signature"; txId: string; hash: string; address: string };
 
 export type ApiErrorCode =
   | "UNAUTHENTICATED"
