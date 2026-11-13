@@ -4,9 +4,9 @@ A smart wallet you chat with, which changes your money, moves it and pays people
 
 ## Status
 
-Documentation and interface mockups only. Nothing has been built yet. There are no users, no revenue and no transactions.
+Documentation, interface mockups, and a first web app preview in [`web/`](web/README.md) that runs in mock mode. Nothing is live. There are no users, no revenue and no real transactions.
 
-This repository is the product write-up for a [Stellar Nigeria Buildathon](https://bit.ly/stellar-buildathon) application. Applications close on 21 November 2026. Code will be added later; do not treat anything here as a live product.
+This repository is the product write-up for a [Stellar Nigeria Buildathon](https://bit.ly/stellar-buildathon) application. Applications close on 21 November 2026. Do not treat anything here as a live product.
 
 ## Documents
 
@@ -19,3 +19,4 @@ This repository is the product write-up for a [Stellar Nigeria Buildathon](https
 - [Open questions](docs/open-questions.md) — things still to confirm before building
 - [Claude build prompt](docs/claude-build-prompt.md) — copy-paste prompt to build the web app pages
 - [Interface designs](design/README.md) — style guide and mockup screenshots
+- [Web app](web/README.md) — Next.js preview app: how to run it locally and deploy to Vercel
