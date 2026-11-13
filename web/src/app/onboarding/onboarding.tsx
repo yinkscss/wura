@@ -78,7 +78,7 @@ export function Onboarding() {
                   highlight
                   pill={<Pill tone="pink">No ID required</Pill>}
                   title="Fund with USDC"
-                  body="Send USDC to your agent wallet and start chatting. Swaps, sends, payment links and balances work straight away."
+                  body="Send USDC to your Wura wallet and start chatting. Swaps, sends, payment links and balances work straight away."
                   points={["No identity check to start", "Swap to naira later, when you want", "Spending limits apply from the first send"]}
                   action={<Button size="lg" className="w-full" onClick={() => setView("usdc")}>Start with USDC</Button>}
                   delay={0.05}
@@ -141,14 +141,14 @@ export function Onboarding() {
             <Panel key="done">
               <Headline title="You’re set.">
                 {doneVia === "usdc"
-                  ? "Once USDC lands at your address, ask the agent for anything. Example balances are loaded so you can try every flow now."
+                  ? "Once USDC lands at your address, ask Wura for anything. Example balances are loaded so you can try every flow now."
                   : "When the transfer clears, your naira shows up in the wallet. Example balances are loaded so you can try every flow now."}
               </Headline>
               <div className="mx-auto mt-10 grid max-w-[760px] gap-5 sm:grid-cols-2">
                 <Card className="flex flex-col gap-4 p-7 text-blue">
                   <span className="grid size-11 place-items-center rounded-2xl bg-pink/20 text-pink-deep"><ChatIcon size={20} /></span>
                   <div>
-                    <h3 className="text-[20px] font-bold tracking-[-0.03em]">Talk to your agent</h3>
+                    <h3 className="text-[20px] font-bold tracking-[-0.03em]">Talk to Wura</h3>
                     <p className="mt-1 text-[14.5px] text-muted">Try “Change ₦50,000 to dollars”.</p>
                   </div>
                   <ButtonLink href="/chat" size="lg" className="mt-auto w-full">Open chat</ButtonLink>

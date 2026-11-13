@@ -25,7 +25,7 @@ import { ApiFailure } from "./errors";
  *   use it for approved, in-limit actions. Never hold an unscoped key.
  */
 
-export type MoveKind = "swap" | "send";
+export type MoveKind = "swap" | "send" | "site";
 
 export type SignRequest = {
   kind: MoveKind;

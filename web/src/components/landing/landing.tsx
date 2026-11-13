@@ -225,7 +225,7 @@ const SKILLS = [
 
 const SAFETY = [
   { icon: ListIcon, title: "A preview first", body: "Rate, fee, amount and destination, before anything is sent." },
-  { icon: ShieldIcon, title: "Your yes, every time", body: "The agent waits for you to approve. Cancel and nothing happens." },
+  { icon: ShieldIcon, title: "Your yes, every time", body: "Wura waits for you to approve. Cancel and nothing happens." },
   { icon: ClockIcon, title: "Daily and per-payment caps", body: "You set them. Requests over a cap are refused before signing." },
   { icon: ChatIcon, title: "Everything is logged", body: "Every swap, send and link goes into a log you can check." },
 ];
@@ -247,7 +247,7 @@ export function Landing() {
         id="product"
         eyebrow="Product"
         title="Best rate, before anything moves."
-        sub="Ask for a swap and the agent quotes SDEX, Soroswap and Aquarius itself, then shows you the winner with the fee included. If a venue can’t be reached, it says so instead of guessing."
+        sub="Ask for a swap and Wura quotes SDEX, Soroswap and Aquarius itself, then shows you the winner with the fee included. If a venue can’t be reached, it says so instead of guessing."
       >
         <div className="grid items-center gap-10 lg:grid-cols-[1.25fr_1fr]">
           <Reveal>
@@ -276,7 +276,7 @@ export function Landing() {
         id="how"
         eyebrow="How it works"
         title="Ask. Check the preview. Say yes."
-        sub="Try it below. Pick a request and the agent walks through it the way it does in the app."
+        sub="Try it below. Pick a request and Wura walks through it the way it does in the app."
         className="bg-page"
       >
         <HowDemo />
@@ -361,7 +361,7 @@ export function Landing() {
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-6">
           <Wordmark />
           <p className="max-w-[560px] text-[13px] leading-relaxed">
-            Built for the Stellar Nigeria Buildathon. “Agent” is a working name. This is a preview: it isn’t live, no real money moves, and the figures shown are examples.
+            Wura is built for the Stellar Nigeria Buildathon. This is a preview: it isn’t live, no real money moves, and the figures shown are examples.
           </p>
         </div>
       </footer>

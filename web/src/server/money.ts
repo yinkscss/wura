@@ -38,7 +38,7 @@ export const EXAMPLE_LIMITS = {
 /** Example flat fee on a USDC send, in cents. */
 export const EXAMPLE_SEND_FEE = 1;
 
-function limitsFor(w: WalletState): Limits {
+export function limitsFor(w: WalletState): Limits {
   return {
     example: true,
     daily: { ...EXAMPLE_LIMITS.daily },
@@ -51,7 +51,7 @@ function limitsFor(w: WalletState): Limits {
   };
 }
 
-function checkLimits(w: WalletState, currency: Currency, amount: number) {
+export function checkLimits(w: WalletState, currency: Currency, amount: number) {
   const cap = EXAMPLE_LIMITS.perPayment[currency];
   if (amount > cap) {
     throw new ApiFailure(
@@ -70,7 +70,7 @@ function checkLimits(w: WalletState, currency: Currency, amount: number) {
   }
 }
 
-function checkBalance(w: WalletState, currency: Currency, amount: number) {
+export function checkBalance(w: WalletState, currency: Currency, amount: number) {
   if (amount > w.balances[currency]) {
     throw new ApiFailure(
       "INSUFFICIENT_BALANCE",
@@ -87,7 +87,7 @@ function requirePositiveInt(n: unknown, field: string): number {
   return n;
 }
 
-function log(w: WalletState, a: Omit<Activity, "id" | "at">) {
+export function log(w: WalletState, a: Omit<Activity, "id" | "at">) {
   const entry: Activity = { id: newId("act"), at: Date.now(), ...a };
   w.activity.unshift(entry);
   return entry;

@@ -11,6 +11,7 @@ import {
   previewSend,
 } from "./money";
 import type { Session } from "./session";
+import { requestSiteConnect, type ConnectResult } from "./site-connect";
 
 /**
  * v1 chat brain: a small rule-based intent parser for the money commands.
@@ -55,6 +56,16 @@ export async function handleMessage(s: Session, message: string): Promise<AgentR
   const text = message.trim();
   const t = text.toLowerCase();
   if (!t) return { text: "Tell me what you want to do with your money." };
+
+  // Site connect: "Connect to market.example.org and buy 2 posters"
+  const site = siteIntent(text);
+  if (site) {
+    try {
+      return connectReply(requestSiteConnect(s, site));
+    } catch (err) {
+      return refusal(err, "Not connected");
+    }
+  }
 
   // Swap naira → USDC: "Change ₦50,000 to dollars"
   let m = t.match(new RegExp(String.raw`(?:change|swap|convert|turn)\s+${AMT}\s*${NAIRA}?\s*(?:to|into|for)\s+${DOLLARS}`, "i"));
@@ -164,3 +175,34 @@ async function swapReply(
     return refusal(err, "Not swapped");
   }
 }
+
+const DOMAIN = /\b((?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s,]*)?)/i;
+
+/** Finds "connect to <site> and buy <thing>" style requests. */
+function siteIntent(text: string): { url: string; want: string } | null {
+  if (!/\b(connect|buy|get|purchase|go to|visit|open|mint)\b/i.test(text)) return null;
+  const m = text.match(DOMAIN);
+  if (!m || /@/.test(text.slice(Math.max(0, (m.index ?? 0) - 1), (m.index ?? 0)))) return null;
+  // Ignore amounts like "50.5k" being read as domains.
+  if (!/[a-z]{2,}$/i.test(m[1].replace(/^https?:\/\//i, "").replace(/\/.*$/, ""))) return null;
+  const rest = text.replace(m[1], " ").replace(/\s+/g, " ");
+  const w = rest.match(/\b(?:buy|get|purchase|mint)\s+(?:me\s+)?(.+?)(?:\s+(?:from|on|at|there|please))?[.!?]*$/i);
+  const want = (w?.[1] ?? "").trim();
+  return { url: m[1], want };
+}
+
+function connectReply(r: ConnectResult): AgentReply {
+  if (r.kind === "permission") {
+    return {
+      text: `Connect to this site? ${r.request.host} isn’t on your allow list yet.`,
+      card: { type: "site-permission", request: r.request, siteName: r.siteName },
+    };
+  }
+  if (r.kind === "declined") return { text: `OK, I won’t connect to ${r.request.host}. Nothing was sent.` };
+  return {
+    text: `I read ${r.action.host}, found its contract and simulated the payment. Here’s exactly what you’d sign — nothing is signed until you approve.`,
+    card: { type: "site-action", action: r.action },
+  };
+}
+
+export { connectReply };

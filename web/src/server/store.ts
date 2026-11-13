@@ -2,11 +2,14 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import type {
   Activity,
+  AllowedSite,
   Balances,
   KycStatus,
   PaymentLink,
   Quote,
   SendIntent,
+  SiteAction,
+  SiteConnectRequest,
 } from "@/lib/types";
 
 /**
@@ -31,6 +34,10 @@ export type WalletState = {
   contacts: Contact[];
   /** We keep only that a check passed, never the NIN itself. */
   kycStatus: KycStatus;
+  /** Sites the user allowed Wura to connect to (not permission to sign). */
+  allowList: AllowedSite[];
+  siteRequests: Map<string, SiteConnectRequest>;
+  siteActions: Map<string, SiteAction>;
 };
 
 const g = globalThis as unknown as { __agentStore?: Map<string, WalletState> };
@@ -87,6 +94,12 @@ function seed(): WalletState {
       { name: "Chiamaka", address: exampleAddress("Chiamaka") },
     ],
     kycStatus: "none",
+    allowList: [
+      // Fictional example site on a reserved domain.
+      { host: "market.example.org", name: "Example Market", addedAt: T("2026-11-11T10:20:00Z") },
+    ],
+    siteRequests: new Map(),
+    siteActions: new Map(),
   };
 }
 

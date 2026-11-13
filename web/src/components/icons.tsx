@@ -126,3 +126,12 @@ export const MenuIcon = (p: P) => (
 export const CloseIcon = (p: P) => (
   <Svg {...p}><path d="M5 5l10 10M15 5L5 15" {...stroke} strokeWidth={1.8} /></Svg>
 );
+export const GlobeIcon = (p: P) => (
+  <Svg {...p}>
+    <circle cx="10" cy="10" r="7" {...stroke} />
+    <path d="M3 10h14M10 3c2 2.2 2.8 4.6 2.8 7s-.8 4.8-2.8 7c-2-2.2-2.8-4.6-2.8-7S8 5.2 10 3z" {...stroke} />
+  </Svg>
+);
+export const TrashIcon = (p: P) => (
+  <Svg {...p}><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 10a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L14 6" {...stroke} /></Svg>
+);

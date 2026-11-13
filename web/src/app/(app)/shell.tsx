@@ -10,6 +10,7 @@ import {
   CloseIcon,
   GaugeIcon,
   GearIcon,
+  GlobeIcon,
   GridIcon,
   HomeIcon,
   MenuIcon,
@@ -24,6 +25,7 @@ const NAV = [
   { href: "/activity", label: "Activity", icon: ClockIcon },
   { href: "/limits", label: "Limits", icon: GaugeIcon },
   { href: "/channels", label: "Channels", icon: GridIcon },
+  { href: "/settings/sites", label: "Sites", icon: GlobeIcon },
   { href: "/settings", label: "Settings", icon: GearIcon },
 ];
 
@@ -32,7 +34,10 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav className="flex flex-col gap-1.5">
       {NAV.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href || pathname.startsWith(href + "/");
+        // The most specific matching item wins (e.g. /settings/sites over /settings).
+        const matches = NAV.filter((n) => pathname === n.href || pathname.startsWith(n.href + "/"));
+        const best = matches.sort((a, b) => b.href.length - a.href.length)[0];
+        const active = best?.href === href;
         return (
           <Link
             key={href}

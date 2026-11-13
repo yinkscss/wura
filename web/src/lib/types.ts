@@ -79,7 +79,7 @@ export type Limits = {
   remainingToday: Balances;
 };
 
-export type ActivityKind = "swap" | "send" | "link" | "fund";
+export type ActivityKind = "swap" | "send" | "link" | "fund" | "site";
 export type ActivityStatus = "done" | "open" | "pending" | "refused";
 
 export type Activity = {
@@ -119,9 +119,56 @@ export type ApiErrorCode =
   | "KYC_REQUIRED"
   | "TRIAL_LIMIT"
   | "BAD_REQUEST"
-  | "SIGNING_UNAVAILABLE";
+  | "SIGNING_UNAVAILABLE"
+  | "SITE_NOT_ALLOWED"
+  | "SITE_UNSUPPORTED"
+  | "CONTRACT_NOT_FOUND"
+  | "CONTRACT_UNVERIFIED"
+  | "SIMULATION_FAILED";
 
 export type ApiError = { error: { code: ApiErrorCode; message: string } };
+
+// ---------- Site connect (docs/site-connect.md) ----------
+
+/** A site the user has allowed Wura to connect to. Not permission to sign. */
+export type AllowedSite = { host: string; name: string; addedAt: number };
+
+/** A "Connect to this site?" question waiting for the user's answer. */
+export type SiteConnectRequest = {
+  id: string;
+  host: string;
+  url: string;
+  /** What the user asked for, e.g. "buy a concert ticket". */
+  want: string;
+  createdAt: number;
+  status: "pending" | "connected" | "declined";
+};
+
+/** What contract discovery found, step by step (mocked in v1). */
+export type DiscoveryStep = { label: string; detail: string };
+
+export type SiteAction = {
+  id: string;
+  host: string;
+  siteName: string;
+  want: string;
+  contract: { address: string; verified: boolean; name: string };
+  /** The contract function Wura will call, read from the on-chain spec. */
+  call: { fn: string; args: Array<{ name: string; type: string; value: string }> };
+  steps: DiscoveryStep[];
+  /** Plain-language summary of what signing does. */
+  summary: string;
+  asset: Currency;
+  price: number;
+  fee: number;
+  total: number;
+  balanceBefore: number;
+  dailyRemainingAfter: number;
+  dailyLimit: number;
+  perPaymentCap: number;
+  expiresAt: number;
+  status: "pending" | "signed" | "cancelled" | "expired";
+};
 
 /** A card the chat can show under an agent message. */
 export type AgentCard =
@@ -130,6 +177,8 @@ export type AgentCard =
   | { type: "link"; link: PaymentLink }
   | { type: "balance"; balances: Balances; limits: Limits }
   | { type: "rates"; quote: Quote }
-  | { type: "refused"; code: ApiErrorCode; title: string; lines: string[] };
+  | { type: "refused"; code: ApiErrorCode; title: string; lines: string[] }
+  | { type: "site-permission"; request: SiteConnectRequest; siteName: string }
+  | { type: "site-action"; action: SiteAction };
 
 export type AgentReply = { text: string; card?: AgentCard };

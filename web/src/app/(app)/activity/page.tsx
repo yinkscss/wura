@@ -9,7 +9,7 @@ export default function ActivityPage() {
   const { data } = useOverview();
   return (
     <div className="mx-auto flex max-w-[1240px] flex-col gap-7 px-5 py-8 sm:px-8 lg:px-11 lg:py-10">
-      <PageHeader title="Activity" sub="Every move the agent makes is written here. Example entries are marked as preview data." />
+      <PageHeader title="Activity" sub="Every move Wura makes is written here. Example entries are marked as preview data." />
       <Card className="p-6 shadow-soft sm:p-7">
         <h2 className="mb-4 text-[20px] font-bold tracking-[-0.03em]">Transaction log</h2>
         {data ? <ActivityTable rows={data.activity} /> : <SkeletonBlock className="h-72" />}

@@ -68,7 +68,7 @@ function exampleLink(): PaymentLink {
 
 const STEPS = [
   { n: 1, title: "Ask in plain words", body: "Type it the way you’d say it. No menus, no forms." },
-  { n: 2, title: "See the best rate and the full cost", body: "The agent compares SDEX, Soroswap and Aquarius and shows what you get, with the fee." },
+  { n: 2, title: "See the best rate and the full cost", body: "Wura compares SDEX, Soroswap and Aquarius and shows what you get, with the fee." },
   { n: 3, title: "Approve, or don’t", body: "Nothing moves until you say yes. Every move goes into your log." },
 ];
 
@@ -203,7 +203,7 @@ export function HowDemo() {
       <div className="relative mx-auto w-full max-w-[520px]">
         <div className="relative overflow-hidden rounded-[32px] bg-page p-4 shadow-[0_30px_80px_rgba(8,22,80,0.25)] ring-1 ring-white sm:p-5">
           <div className="mb-3 flex items-center justify-between px-1">
-            <span className="text-[17px] font-bold tracking-[-0.03em]">Agent</span>
+            <span className="text-[17px] font-bold tracking-[-0.03em]">Wura</span>
             <span className="rounded-full bg-[#E2E9F6] px-3 py-1.5 text-[12px] font-bold">Demo · example figures</span>
           </div>
           <div className="flex min-h-[560px] flex-col gap-3">

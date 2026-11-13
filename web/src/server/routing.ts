@@ -4,7 +4,7 @@ import { VENUE_NAMES } from "@/lib/types";
 import { config } from "./config";
 
 /**
- * The agent's own routing layer. It asks each Stellar venue for a price,
+ * Wura's own routing layer. It asks each Stellar venue for a price,
  * compares them and marks the best one. It follows StellarRoute's approach but
  * does not call a StellarRoute service (none is deployed).
  *

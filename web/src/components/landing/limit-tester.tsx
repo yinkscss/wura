@@ -73,11 +73,11 @@ export function LimitTester() {
           </span>
           {over ? (
             <span>
-              <b>Refused before signing.</b> ${amt} is over your ${CAP} per-payment cap, so the agent won’t send it. Nothing moves.
+              <b>Refused before signing.</b> ${amt} is over your ${CAP} per-payment cap, so Wura won’t send it. Nothing moves.
             </span>
           ) : (
             <span>
-              <b className="text-blue">Within limits.</b> The agent shows a preview — {LEFT - amt} of {LEFT} USDC left today after this — and waits for your yes.
+              <b className="text-blue">Within limits.</b> Wura shows a preview — {LEFT - amt} of {LEFT} USDC left today after this — and waits for your yes.
             </span>
           )}
         </motion.div>

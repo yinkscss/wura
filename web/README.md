@@ -1,6 +1,6 @@
 # Wura — web app (v1)
 
-The first web app for **Wura**, a money assistant you chat with. The product name is **Wura**. Some screens and the older design shots may still show an “Agent” / “name TBD” wordmark until those are renamed.
+The first web app for **Wura**, a money assistant you chat with. The app uses the Wura name throughout. The older design shots in `../design` still show the old “Agent” / “name TBD” placeholder; they haven't been re-rendered.
 
 This is a Stellar Nigeria Buildathon preview. **Nothing is live.** There are no users, no revenue and no real transactions. Every balance, rate and payment shown is fictional example data, taken from the design mockups in [`../design`](../design/README.md).
 
@@ -11,8 +11,9 @@ This is a Stellar Nigeria Buildathon preview. **Nothing is live.** There are no 
 | `/` | Landing: "Your money, on chat." with five cards on a half-moon arc. Also an animated routing demo, an interactive how-it-works demo and a limit tester |
 | `/sign-in` | Email + 6-digit code. Creates (or reuses) a Stellar wallet |
 | `/onboarding` | Fund choice: USDC (no ID) or naira (identity check before the first top-up) |
-| `/chat` | Chat. Try "Change ₦50,000 to dollars", "Send $20 to Tunde", "Make a payment link for ₦15,000" |
+| `/chat` | Chat. Try "Change ₦50,000 to dollars", "Send $20 to Tunde", "Make a payment link for ₦15,000", "Connect to market.example.org and buy 2 posters" |
 | `/wallet` | Dashboard: balances, daily-limit gauge, per-payment cap, transaction log, connected apps |
+| `/settings/sites` | Connected sites: the allow list, removing a site, and pending “Connect to this site?” requests |
 | `/activity`, `/limits`, `/channels`, `/settings` | The rest of the signed-in shell |
 
 ## Run it locally
@@ -75,6 +76,15 @@ Otherwise the API returns an error, and nothing is signed. The caps are **exampl
 - **Routing** (`src/server/routing.ts`): one adapter per venue (SDEX, Soroswap, Aquarius). Quotes are compared and the best is marked. v1 uses fixed example prices. A venue that can't be quoted is left out and reported, never given an invented rate. Set `MOCK_UNAVAILABLE_VENUES=soroswap` to see that path. There is no live StellarRoute dependency.
 - **Paycrest** (`src/server/paycrest.ts`): a mocked naira on-ramp order. It refuses without a passed identity check, keeps only the verified status (never the NIN), and applies an example trial cap. The UI does not promise a one-time NIN, because reuse isn't confirmed with Paycrest.
 - **Signer** (`src/server/signer.ts`): mock only. `MONEY_MODE=testnet` is refused until Privy Tier 2 signing is wired. The file also notes the future scoped session key for Telegram, WhatsApp and MCP.
+- **Site connect** (`src/server/site-connect.ts`, routes under `/api/sites/*`): follows [`../docs/site-connect.md`](../docs/site-connect.md), mocked. A site that isn't on the allow list gets “Connect to this site?” first, with an option to add it. Then Wura runs the mocked discovery path: read the page, find the Soroban contract, check it's verified, read its interface, simulate, and show a signing preview. Signing goes through the same server-side approval, caps and log as a send. The allow list is permission to connect, never to sign. Only fictional sites on reserved example domains work in mock mode:
+  - `market.example.org`: allowed by default; buy items at 12.50 USDC each
+  - `tickets.example.com`: a 60 USDC ticket, refused by the example cap
+  - `coins.example.net`: a 20 USDC token bundle
+  - `drainer.example.net`: unverified contract, refused
+  - `broken.example.com`: simulation fails, stops
+  - any other example host: no contract found
+
+  Real sites get a plain “I can only connect to the example sites in this preview”. There is no hosted browser.
 - **Chat** (`src/server/agent.ts`): a rule-based intent parser for the money commands. It only handles money questions. It returns quote and preview cards; it never moves money itself.
 
 Claude, ChatGPT, Telegram and WhatsApp appear only as "connected apps" labels, marked as not connected yet. They use generic icons, not their logos.

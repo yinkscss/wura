@@ -17,9 +17,9 @@ const jakarta = localFont({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Agent — Your money, on chat.", template: "%s · Agent" },
+  title: { default: "Wura — Your money, on chat.", template: "%s · Wura" },
   description:
-    "A smart wallet you chat with. It compares rates across Stellar, shows a preview, and only moves money when you say yes. Working name; not live.",
+    "A smart wallet you chat with. It compares rates across Stellar, shows a preview, and only moves money when you say yes. A Stellar Nigeria Buildathon preview; not live.",
 };
 
 export const viewport: Viewport = {
