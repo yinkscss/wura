@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Agent — Interface overview</title>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  .frame-browser img, .frame-phone img { width: 100%; height: auto; display: block; }
+</style>
+</head>
+<body class="overview">
+  <div class="ov">
+    <div class="starfield"></div>
+    <div class="ov-label">
+      <div class="mark">
+        <span class="mark-badge" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 1.2c.25 3 1.5 5.35 4.5 6.35C9.5 8.55 8.25 10.9 8 13.9 7.75 10.9 6.5 8.55 3.5 7.55 6.5 6.55 7.75 3.2 8 1.2z" fill="#08318D"/>
+          </svg>
+        </span>
+        <span class="mark-name">Agent</span>
+        <span class="mark-hint">name TBD</span>
+      </div>
+      <p>Interface explorations for a chat money agent. Example screens, not a live product.</p>
+    </div>
+    <div class="ov-note">Claude · ChatGPT<br/>Telegram · WhatsApp</div>
+
+    <!-- Half-moon: landing at the apex, screens descending left and right -->
+    <div class="frame-browser" style="left:600px;top:137px;width:720px;z-index:3;transform:rotate(0deg);">
+      <div class="chrome">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="url">Landing</span>
+      </div>
+      <img src="../shots/01-landing-desktop.png" width="720" height="450" alt="Landing"/>
+    </div>
+
+    <div class="frame-browser" style="left:224px;top:432px;width:400px;z-index:4;transform:rotate(-6deg);transform-origin:50% 50%;">
+      <div class="chrome">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="url">Wallet</span>
+      </div>
+      <img src="../shots/05-dashboard-balance-limits.png" width="400" height="250" alt="Dashboard"/>
+    </div>
+
+    <div class="frame-browser" style="left:60px;top:617px;width:400px;z-index:5;transform:rotate(-12deg);transform-origin:50% 50%;">
+      <div class="chrome">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="url">Funding</span>
+      </div>
+      <img src="../shots/06-onboarding-verify-once.png" width="400" height="250" alt="Onboarding"/>
+    </div>
+
+    <div class="frame-phone" style="left:1143px;top:171px;width:260px;z-index:6;transform:rotate(6deg);transform-origin:50% 50%;">
+      <img src="../shots/02-chat-swap-approve.png" alt="Swap approval"/>
+    </div>
+    <div class="frame-phone" style="left:1366px;top:305px;width:260px;z-index:7;transform:rotate(10deg);transform-origin:50% 50%;">
+      <img src="../shots/03-send-confirm.png" alt="Send confirm"/>
+    </div>
+    <div class="frame-phone" style="left:1570px;top:490px;width:260px;z-index:8;transform:rotate(13deg);transform-origin:50% 50%;">
+      <img src="../shots/04-payment-link.png" alt="Payment link"/>
+    </div>
+  </div>
+</body>
+</html>
