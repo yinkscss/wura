@@ -20,6 +20,8 @@ export type VenueQuote = {
   /** NGN per 1 USDC, all-in. */
   rate: number;
   best: boolean;
+  /** How the venue routes it, e.g. "via XLM" or "1 pool". Live quotes only. */
+  route?: string;
 };
 
 export type UnquotedVenue = { venue: VenueId; name: string; reason: string };
@@ -40,6 +42,12 @@ export type Quote = {
   bestVenue: VenueId;
   expiresAt: number;
   status: "pending" | "approved" | "cancelled" | "expired";
+  /** "live": real venue prices (Stellar mainnet, read-only). "example": fixed demo prices. */
+  source: "live" | "example";
+  /** Reference market rate, NGN per USD, when available. */
+  market?: { rate: number; source: string; updatedAt: string };
+  /** How much worse (negative) or better the best quote is than the market rate, in percent. */
+  vsMarketPct?: number;
 };
 
 export type SendIntent = {

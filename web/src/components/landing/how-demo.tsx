@@ -35,6 +35,7 @@ function exampleQuote(): Quote {
     bestVenue: "aquarius",
     expiresAt: Date.now() + 60_000,
     status: "pending",
+    source: "example",
   };
 }
 function exampleSend(): SendIntent {
