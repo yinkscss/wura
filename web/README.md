@@ -50,7 +50,7 @@ How signing works (`src/server/testnet.ts`):
 
 A wallet needs test XLM and a USDC trustline before it can hold USDC. The **Stellar testnet wallet** card on `/wallet` does both: Friendbot for XLM, then a trustline the user's wallet signs.
 
-**With Privy:** set `MONEY_MODE=testnet`, `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET` and `SESSION_SECRET`. Users get test USDC from Circle's faucet (https://faucet.circle.com, pick Stellar testnet).
+**With Privy:** set `MONEY_MODE=testnet`, `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET` (read-only is enough), `PRIVY_VERIFICATION_KEY` and `SESSION_SECRET`. For a dev app, enable test accounts and leave allowed origins empty (Privy test accounts only work without them). Users get test USDC from Circle's faucet (https://faucet.circle.com, pick Stellar testnet).
 
 **Without Privy (local testing and team demos):** `TESTNET_SIGNER=server-dev` makes the server derive a throwaway testnet key per email and sign with it. It's custodial, testnet-only and meant for development. For example:
 
