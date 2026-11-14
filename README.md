@@ -19,7 +19,7 @@ The product name is **Wura**. Older design screenshots still show an “Agent”
 - [Auth](docs/auth.md) — email sign-in mapped to a Stellar address (Privy for the buildathon)
 - [Wallet roadmap](docs/wallet-roadmap.md) — Privy now; Wura's own passkey smart wallet with on-chain limits next
 - [Site connect](docs/site-connect.md) — connect to other blockchain sites (allow list, contract discovery, later browser option)
-- [WhatsApp](docs/whatsapp.md) — what we need to bring, provider choice, costs, the currency-policy risk, and how it plugs into the chat code
+- [WhatsApp](docs/whatsapp.md) — message channel only; shared linking/renderer with Telegram; provider, costs, currency-policy risk
 - [Competitors](docs/competitors.md) — who is already close, and where this can stand out
 - [Buildathon](docs/buildathon.md) — application scope, demo plan, and why this project
 - [Buildathon application draft](docs/buildathon-application.md) — drafted form answers; not submitted

@@ -32,10 +32,9 @@ The approach is decided and written up in [Site connect](site-connect.md): allow
 
 ## WhatsApp
 
-The plan is written up in [WhatsApp](whatsapp.md): Meta's Cloud API directly, with the free test number for the buildathon. WhatsApp is only the message channel. Wura's AI agent understands the request, and Wura's server carries out the swap or payment on Stellar after the user approves. Still open:
+The plan is written up in [WhatsApp](whatsapp.md): Meta's Cloud API directly, with the free test number for the buildathon. WhatsApp is only the message channel. Wura's AI agent (`handleMessage` with `TOOLS` / `runTool`; rule parser as fallback) understands the request, and Wura's server carries out the swap or payment on Stellar after the user approves. Share linking, dedupe and the card renderer core with the [Telegram bot plan](telegram-bot-plan.md). Still open:
 
 - **Currency policy.** WhatsApp never moves Wura's money, but WhatsApp's Business Policy prohibits a business from using WhatsApp to facilitate the exchange of “real, virtual, or fake currency”, whatever licences it holds. Meta judges what the chat is used for, not where the money settles. It is not confirmed whether Meta will accept Wura's chat being used to request naira and USDC swaps. Ask Meta, or a Business Solution Provider, before using WhatsApp in production.
-- **AI for the demo.** Whether the buildathon demo uses today's rule-based agent or a language model calling the same money functions. Either way it lives in `web/src/server/agent.ts` and is shared by every channel, not built separately for WhatsApp.
 - **Legal entity.** Which registered business (CAC certificate) verifies with Meta, and whether its name links clearly enough to “Wura” for the display name review.
 - **Phone number.** Which dedicated number Wura uses in production. It must not already be on WhatsApp.
 - **Demo reach.** The free test number can only message 5 pre-verified phones. Decide whether that is enough for the showcase, or whether a verified number is needed before 4 December.

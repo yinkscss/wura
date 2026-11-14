@@ -9,7 +9,7 @@ Nothing here is built yet. The web app shows WhatsApp only as a “connected app
 - **WhatsApp is only a message channel.** It carries the user's text to Wura and Wura's replies back. It does not swap, send, hold or price money, and it never sees a wallet key.
 - **Wura's AI agent does the work.** It reads what the user wrote, works out what they want, gets a quote and asks for approval. It is the same agent the web chat uses, so WhatsApp gets exactly the same checks.
 - **Wura's server and Stellar move the money**, and only after the user approves. Balances, approvals, limits and the transaction log all live on Wura's server.
-- **What we are asking for** is a WhatsApp adapter: a webhook that receives WhatsApp messages and passes them to the existing agent, a renderer that turns the agent's replies into WhatsApp messages and buttons, and a secure way to link a WhatsApp number to a Wura account. No new money logic, and no separate AI for WhatsApp.
+- **What we are asking for** is a WhatsApp adapter: a webhook that receives WhatsApp messages and passes them to the existing agent, a thin WhatsApp layer over the shared card renderer, and a secure way to link a WhatsApp number to a Wura account. No new money logic, and no separate AI for WhatsApp. Share the channel link table, dedupe table and renderer core with the [Telegram bot plan](telegram-bot-plan.md); don't build a second copy.
 - **For the buildathon:** use the **Meta WhatsApp Cloud API directly**, with Meta's **free test number**. It needs no business verification and costs nothing. Its limit is that it can only message up to **5 phone numbers we verify in advance**, which is enough for a team demo but not for judges trying it on their own phones.
 - **For production:** a verified business, a real number, a payment method, approved message templates, and an answer from Meta on the currency policy. The policy question is about what Wura's chat is used for, not about WhatsApp handling money (see [Policy risk](#policy-risk)). It comes first, because it can block the channel entirely.
 
@@ -18,21 +18,21 @@ Nothing here is built yet. The web app shows WhatsApp only as a “connected app
 | Part | What it does | What it does not do |
 | --- | --- | --- |
 | **WhatsApp** (Meta Cloud API) | Delivers the user's message to Wura's webhook, and delivers Wura's reply and buttons to the user | Understand requests, quote, approve, hold or move money |
-| **Wura's AI agent** (`handleMessage` in `web/src/server/agent.ts`) | Understands the request, gets a quote or preview, asks the user to approve, explains refusals | Move money on its own. It only returns a quote or preview |
-| **Wura's server** (`web/src/server/money.ts`) | Checks ownership, quote expiry, the per-payment cap, the daily cap and the balance, then carries out the approved action and writes the log | Act without an approval |
+| **Wura's AI agent** (`handleMessage` in `web/src/server/agent.ts`) | Calls the configured model with the preview-only tools in `tools.ts` (`TOOLS` / `runTool`). The card always comes from a real tool result. Falls back to the rule parser in `rules.ts` if no model is set or the model fails | Move money on its own. Tools only prepare quotes, previews and links |
+| **Wura's server** (`money.ts`, via `channel.ts` for chat) | Checks ownership, quote expiry, the per-payment cap, the daily cap and the balance, then carries out the approved action and writes the log | Act without an approval |
 | **Stellar** | Settles the swap or payment | |
 
-A swap over WhatsApp, step by step:
+A swap over WhatsApp, step by step (mock mode; see [Buildathon demo path](#buildathon-demo-path)):
 
 1. The user types “Change ₦50,000 to dollars” in WhatsApp.
 2. WhatsApp delivers the message to Wura's webhook.
-3. Wura's agent understands it, gets quotes from the venues and builds a quote card.
+3. Wura's agent understands it (model + tools, or the rule fallback), gets quotes from the venues and builds a quote card.
 4. Wura sends the quote back through WhatsApp, with Approve and Cancel buttons.
 5. The user taps Approve. WhatsApp delivers the tap to the webhook, like any other message.
-6. Wura's server runs the same checks as on the web, and the swap settles on Stellar.
+6. Wura's server runs the same checks as on the web (`approveSwapFromChat` in `channel.ts`), and the swap settles.
 7. Wura sends a receipt back through WhatsApp. The same entry appears in the web transaction log.
 
-Today the agent is a small rule-based parser. The plan is to replace it with a language model that calls the same typed money functions (see the comment at the top of `agent.ts`). That swap happens once, inside the agent, and every channel benefits. The WhatsApp code should never need to change for it.
+The agent already uses a language model when one is configured (merged in #10). The rule parser is only the fallback. WhatsApp calls the same `handleMessage`; it does not get its own AI.
 
 ## Policy risk
 
@@ -57,13 +57,14 @@ What to do about it:
 
 Since 15 January 2026, WhatsApp's Business Platform terms bar “AI Providers” from offering a general-purpose AI assistant as the main thing they make available on WhatsApp. Meta said at the time that businesses using AI to serve their own customers are not affected.
 
-Using AI to understand messages is fine. Wura is a money service that uses AI to serve its own users, not an AI company offering a general-purpose assistant, so it is not the target of this rule. This holds whether the agent is today's rule-based parser or a language model, as long as it stays scoped to money: it calls the same typed money functions, only answers money questions, and politely refuses everything else. Don't let it become an open-ended chatbot on WhatsApp.
+Using AI to understand messages is fine. Wura is a money service that uses AI to serve its own users, not an AI company offering a general-purpose assistant, so it is not the target of this rule. Keep the agent money-only on WhatsApp the same way it is on the web: it calls the preview-only tools, only answers money questions, and politely refuses everything else. Don't let it become an open-ended chatbot on WhatsApp.
 
 ### Messaging rules we must follow
 
 - **Opt-in.** We may only message people who have opted in to hear from Wura. Record that consent.
 - **A way to reach a human.** The Business Messaging Policy allows automated replies inside the 24-hour window only with a “prompt, clear, and direct” escalation path: a support email, a web support page, a form, or a hand-off to a person.
 - **Nigeria's data protection law (NDPA 2023).** Ask for WhatsApp consent separately from other consent, and give a clear way to opt out.
+- **Phone numbers are personal data.** The linked number is stored only for routing (to find the Wura user). Delete it when the user disconnects: a “Disconnect” control on the Channels page and an unlink command in chat. Never log the number with message text. Cover this in the privacy copy.
 - **Never ask for a NIN in WhatsApp.** The identity check stays on the web, as described in [KYC and funding](kyc-and-funding.md).
 
 ## Choosing a provider
@@ -102,7 +103,7 @@ Notes:
 | App Secret | App settings > Basic | Used to check that webhook calls really come from Meta |
 | Verify token | We choose it | Any long random string; Meta sends it back when we register the webhook |
 | Public HTTPS webhook URL | The Vercel deploy, or a cloudflared / ngrok tunnel for local work | Register it in the app and subscribe to the `messages` field |
-| A database | Postgres (Neon via Vercel) | The in-memory store resets between Vercel instances, so a webhook would lose quotes between messages. Merge the `persistence` branch first |
+| A database | Postgres (Neon via Vercel; already wired in #9) | Required. Quotes, channel links, `wamid` dedupe and the per-number rate limit must live here: in-memory state on Vercel only covers one instance |
 
 New environment variables (server-side only, never `NEXT_PUBLIC_`):
 
@@ -147,35 +148,37 @@ For the buildathon, the free test number and the free 1,000 service messages mea
 
 ## How it plugs into Wura's code
 
-This is a design, not something built yet. The goal is to reuse the existing agent and money API unchanged, so WhatsApp gets exactly the same checks as the web. Everything new is in the WhatsApp adapter: receiving messages, linking numbers, and formatting replies.
+This is a design, not something built yet. The goal is to reuse the existing agent and money API unchanged, so WhatsApp gets exactly the same checks as the web. Share the channel plumbing with the [Telegram bot plan](telegram-bot-plan.md): one channel link table keyed by channel and external id, one dedupe table, and one card renderer core with a thin layer per channel for each format. Otherwise we end up with two copies of the linking and approval-safety code. WhatsApp-only work is the Meta webhook, the WhatsApp message format, and phone-number linking UX.
 
 ```mermaid
 flowchart LR
   user["User on WhatsApp"] --> meta["WhatsApp (Meta Cloud API): carries messages only"]
   meta -->|"POST webhook, X-Hub-Signature-256"| hook["/api/whatsapp/webhook"]
-  hook --> link["Phone to Wura account link"]
+  hook --> link["Channel link table (shared with Telegram)"]
   link --> agent["Wura AI agent: handleMessage (agent.ts)"]
-  agent --> money["Wura server: money.ts checks approval, caps, balance"]
+  agent --> money["channel.ts → money.ts: approval, caps, balance"]
   money --> stellar["Stellar: settles the swap or payment"]
-  agent --> render["Card to WhatsApp renderer"]
+  agent --> render["Shared card renderer + WhatsApp format layer"]
   render -->|"text plus reply buttons"| meta
 ```
 
 ### The webhook
 
-A new route, `/api/whatsapp/webhook`:
+A new route, `/api/whatsapp/webhook`. A model turn can take up to 35s (`DEADLINE_MS` in `agent.ts`), so answer Meta fast, then do the work:
 
 - **GET:** Meta's one-time handshake. If `hub.verify_token` matches `WHATSAPP_VERIFY_TOKEN`, echo back `hub.challenge`.
 - **POST:** each incoming message.
   1. Read the raw body first. The signature covers the exact bytes, so parse JSON only after checking it.
   2. Compute HMAC-SHA256 of the raw body with `WHATSAPP_APP_SECRET` and compare it, in constant time, with the `X-Hub-Signature-256` header (after `sha256=`). Reject anything that doesn't match.
-  3. Skip message IDs (`wamid`) we've already handled. Meta retries, and a retried “Approve” must not run twice.
-  4. Always answer 200 once the request is genuine. Meta keeps retrying failed deliveries for days.
+  3. Record the message ID (`wamid`) in Postgres and skip ones we've already handled. Meta retries, and a retried “Approve” must not run twice. In-memory dedupe on Vercel only covers one instance.
+  4. Apply a per-number rate limit in Postgres (for example 20 messages a minute), same idea as Telegram's per-user limit.
+  5. Return **200 at once**, then run `handleMessage` in the background (`after()` on Vercel). Meta keeps retrying failed deliveries for days; a slow 200 causes duplicate work.
+  6. Set `export const maxDuration = 60`, like `/api/agent`. Background work still counts toward it.
 
 ### Reuse, not rewrite
 
-- Pass the text to `handleMessage` from `web/src/server/agent.ts` as it is. It already returns plain text plus an optional card, and it never moves money itself. Don't add a second parser or AI for WhatsApp.
-- Add a renderer that turns each `AgentCard` type (`web/src/lib/types.ts`) into a WhatsApp message:
+- Pass the text to `handleMessage` from `web/src/server/agent.ts` as it is. It already returns plain text plus an optional card; tools never move money. Don't add a second parser or AI for WhatsApp.
+- Share the card renderer core with Telegram (see [Telegram bot plan](telegram-bot-plan.md)). Add only a thin WhatsApp format layer that turns each `AgentCard` (`web/src/lib/types.ts`) into a WhatsApp message:
   - `quote`: the venues as lines (“Aquarius 31.20 USDC, best”), the rate, the fee, and Approve / Cancel buttons.
   - `send`: recipient, amount, fee, daily limit left, per-payment cap, and Confirm / Cancel buttons.
   - `link`: the amount and the link as text, which WhatsApp makes tappable.
@@ -183,24 +186,30 @@ A new route, `/api/whatsapp/webhook`:
   - `refused`: the reason, in plain text.
   - `site-permission` and `site-action`: leave out of WhatsApp for now. Site connect is a stretch skill on the web.
 - Reply buttons: at most 3 per message, labels up to 20 characters, and an ID up to 256 characters that comes back when tapped. Use IDs such as `swap:approve:<quoteId>` and `send:cancel:<intentId>`, and route on the ID, never on the label.
+- Button taps call `approveSwapFromChat` / `approveSendFromChat` / `cancelQuote` / `cancelSend` in `web/src/server/channel.ts`, inside `withWallet(session.userId, …)`, never free-text “yes”.
 
 ### Linking a WhatsApp number to a Wura account
 
-A phone number on its own must never be enough to reach someone's money.
+A phone number on its own must never be enough to reach someone's money. Use the same link-code pattern as Telegram ([Telegram bot plan](telegram-bot-plan.md)): one shared channel link table keyed by channel (`whatsapp` / `telegram`) and external id (phone number or Telegram user id), plus hashed one-time codes.
 
 1. The user signs in on the web with their email code, as today.
 2. On the Channels page, they tap “Connect WhatsApp”. Wura shows a short one-time code and a `wa.me` link that opens a chat with the code already typed.
-3. They send it. The webhook checks the code, then stores the link from that phone number to their Wura user.
+3. They send it. The webhook checks the code, then stores the link from that phone number to their Wura `user_id` only.
 4. Until a number is linked, the bot only explains how to link it. It never looks people up by email inside the chat.
+5. Disconnect deletes the row: “Disconnect” on the Channels page, and an unlink command in chat.
 
 ### Approval and signing
 
-An Approve tap is a message like any other. WhatsApp delivers it; Wura's server decides whether to act.
+An Approve tap is a message like any other. WhatsApp delivers it; Wura's server decides whether to act. The tap only counts if it comes from the number linked to the wallet that owns that quote or intent. `withWallet(session.userId, …)` already scopes lookups to that user's wallet — the implementer must still check that the session is built from the *sender's* linked number, so another person's quote id is simply not found.
 
-- **Mock mode:** tapping Approve calls the same `approveSwap` / `createSend` with `approve: true`. The server still checks ownership, expiry, both caps and the balance, exactly as on the web.
-- **Testnet with Privy:** the user's Privy wallet signs in the browser, which a WhatsApp chat can't do. Instead of Approve, send a **link button** (Meta calls this a CTA URL message) that opens Wura's web app on that exact preview, where the user approves and signs as they do today.
-- **Later:** the scoped session key described in [Auth](auth.md) and in `web/src/server/signer.ts`. It lets the server sign approved, in-limit actions without a browser, and refuses anything over the caps. The longer-term version is the on-chain agent key in [Wallet roadmap](wallet-roadmap.md).
-- Passkeys often fail inside WhatsApp's in-app browser. Anything that needs a passkey should open the phone's real browser (see [Wallet roadmap](wallet-roadmap.md)).
+| Mode | What Approve does from WhatsApp |
+| --- | --- |
+| **mock** | Calls `approveSwapFromChat` / `approveSendFromChat`. Fake signer; works end to end. Caps, balance and expiry still checked. |
+| **testnet + chat approvals on** | Sends work via the per-user agent key (`channel.ts`, [Auth](auth.md)). Swaps are refused (`SIGNING_UNAVAILABLE`). |
+| **testnet + chat approvals off / Privy only** | Chat cannot sign. Send a **link button** (Meta CTA URL message) that opens Wura's web app on that exact preview, where the user approves and signs. |
+| **testnet, any signer** | Swaps are refused. Do not promise a live swap from WhatsApp. |
+
+Passkeys often fail inside WhatsApp's in-app browser. Anything that needs a passkey should open the phone's real browser (see [Wallet roadmap](wallet-roadmap.md)).
 
 ### WhatsApp limits to design around
 
@@ -211,21 +220,24 @@ An Approve tap is a message like any other. WhatsApp delivers it; Wura's server 
 
 ## Buildathon demo path
 
-On a team phone that is one of the 5 test recipients:
+Say which mode you are in. Nobody should promise judges a live swap from WhatsApp on testnet.
+
+**Mock mode (for the Approve → swap path):** on a team phone that is one of the 5 test recipients:
 
 1. Link the number: send the one-time code from the web Channels page.
 2. Send “Change ₦50,000 to dollars”. Wura's agent replies with the three venues, the best one marked, and Approve / Cancel.
-3. Tap Approve. Wura's server carries out the swap and the agent replies with a receipt and the reference.
+3. Tap Approve. Wura's server carries out the swap (mock signer) and the agent replies with a receipt and the reference.
 4. Send “Send $20 to Tunde”. Wura replies with the preview, the daily limit left and the per-payment cap, and Confirm / Cancel.
 5. Send “Send $60 to Tunde”. Wura refuses: it's over the per-payment cap.
 6. Open the web dashboard and show the same entries in the transaction log. This shows that WhatsApp was only the channel: the actions happened on Wura's server.
+
+**Testnet (for a real send, not a live swap):** prepare a send from WhatsApp, then either turn on chat approvals and Confirm in chat, or use the link button to finish on the web. A swap Approve on testnet is refused; say so if you show that path.
 
 If a judge wants to try it on their own phone, their number has to be added as a test recipient first (5 maximum), or the demo has to use a verified production number.
 
 ## Open questions
 
 - **Currency policy.** WhatsApp doesn't move Wura's money, but Meta's rule covers businesses that use WhatsApp to facilitate currency exchange. Will Meta accept a business whose WhatsApp chat is used to request naira and USDC swaps that Wura carries out on Stellar? Ask Meta or a Business Solution Provider before production.
-- **AI for the demo.** Whether the buildathon demo uses today's rule-based agent or a language model calling the same money functions. Either way it lives in `agent.ts`, not in the WhatsApp code.
 - **Legal entity.** Which registered business verifies with Meta, and does its name link clearly to “Wura” for the display name?
 - **Phone number.** Which dedicated number Wura uses in production.
 - **Demo reach.** Is the test number's 5-recipient limit enough for the showcase, or do we need a verified number before 4 December?
