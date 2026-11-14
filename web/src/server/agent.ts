@@ -127,7 +127,7 @@ export async function handleMessage(s: Session, message: string): Promise<AgentR
       const quote = await getQuote(s, { from: "NGN", to: "USDC", amountIn: toMinor(amt) });
       const best = quote.venues[0];
       return {
-        text: `Right now ${best.name} has the best rate: ₦${rate(best.rate)} per USDC. Here's how the venues compare for ${naira(quote.amountIn)}.`,
+        text: `Right now ${best.name} has the best rate: ₦${rate(best.rate)} per USDC. Here's how the venues compare for ${naira(quote.amountIn)}.${marketNote(quote)}`,
         card: { type: "rates", quote },
       };
     } catch (err) {
@@ -171,7 +171,7 @@ async function swapReply(
       ? ` ${quote.unquoted.map((u) => u.name).join(" and ")} couldn't be quoted, so I left ${quote.unquoted.length === 1 ? "it" : "them"} out.`
       : "";
     return {
-      text: `${compared} ${best.name} is the best rate right now.${skipped}`,
+      text: `${compared} ${best.name} is the best rate right now.${skipped}${marketNote(quote)}`,
       card: { type: "quote", quote },
     };
   } catch (err) {
@@ -209,3 +209,13 @@ function connectReply(r: ConnectResult): AgentReply {
 }
 
 export { connectReply };
+
+/** Warns when the best live Stellar price is well below the market rate. */
+function marketNote(quote: { vsMarketPct?: number; market?: { rate: number } }) {
+  const pct = quote.vsMarketPct;
+  if (pct === undefined || !quote.market || Math.abs(pct) < 3) return "";
+  if (pct > 0) {
+    return ` Note: that's ${pct.toFixed(0)}% more naira than the market rate (₦${rate(quote.market.rate)} per $1), because the naira token trades below ₦1 on Stellar. Check you can cash it out at face value.`;
+  }
+  return ` Heads up: that's ${Math.abs(pct).toFixed(0)}% worse than the market rate (₦${rate(quote.market.rate)} per $1). Naira liquidity on Stellar is thin right now, so check before you approve.`;
+}
