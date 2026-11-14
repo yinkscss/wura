@@ -159,6 +159,7 @@ export async function getQuote(
   }
   const quote: Quote = {
     id: newId("q"),
+    createdAt: Date.now(),
     from: input.from,
     to: input.to,
     amountIn,
@@ -301,7 +302,7 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
       404,
     );
   }
-  const intent: SendIntent = { id: newId("snd"), ...(await sendFigures(s, w, contact, asset, amount)) };
+  const intent: SendIntent = { id: newId("snd"), createdAt: Date.now(), ...(await sendFigures(s, w, contact, asset, amount)) };
   w.sends.set(intent.id, intent);
   return intent;
 }
@@ -339,6 +340,11 @@ async function sendFigures(s: Session, w: WalletState, contact: SendIntent["to"]
   };
 }
 
+/** An approval link rebuilds an expired preview for this long after it was first prepared. */
+const APPROVAL_LINK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const tooOld = (v: { createdAt?: number; expiresAt: number }) => Date.now() - (v.createdAt ?? v.expiresAt) > APPROVAL_LINK_MAX_AGE_MS;
+const APPROVAL_TOO_OLD = "This approval link is more than a day old, so it can't be used any more. Ask Claude to prepare it again.";
+
 const APPROVAL_NOT_FOUND =
   "We couldn't find this in your Wura. Make sure you're signed in with the same email you used in Claude, or ask Claude to prepare it again.";
 
@@ -354,6 +360,7 @@ export async function openApproval(s: Session, id: string): Promise<{ kind: "sen
   const intent = w.sends.get(id);
   if (intent) {
     if (intent.status === "expired" || (intent.status === "pending" && Date.now() > intent.expiresAt)) {
+      if (tooOld(intent)) throw new ApiFailure("QUOTE_EXPIRED", APPROVAL_TOO_OLD, 410);
       const contact = findContact(w, intent.to.address)!;
       Object.assign(intent, await sendFigures(s, w, contact, intent.asset, intent.amount));
     }
@@ -362,10 +369,11 @@ export async function openApproval(s: Session, id: string): Promise<{ kind: "sen
   const quote = w.quotes.get(id);
   if (quote) {
     if (quote.status === "expired" || (quote.status === "pending" && Date.now() > quote.expiresAt)) {
+      if (tooOld(quote)) throw new ApiFailure("QUOTE_EXPIRED", APPROVAL_TOO_OLD, 410);
       precheckSwap(s, quote.from, quote.amountIn);
       const fresh = await getQuote(s, { from: quote.from, to: quote.to, amountIn: quote.amountIn });
       w.quotes.delete(fresh.id);
-      Object.assign(quote, { ...fresh, id: quote.id });
+      Object.assign(quote, { ...fresh, id: quote.id, createdAt: quote.createdAt });
     }
     return { kind: "quote", quote };
   }
