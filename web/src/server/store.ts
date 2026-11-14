@@ -29,11 +29,12 @@ import type {
  * redeploy, and on Vercel separate instances can each hold their own copy.
  */
 
-export type Contact = { name: string; address: string };
+export type { Contact } from "@/lib/types";
+import type { Contact } from "@/lib/types";
 
 export type PendingTx = {
   id: string;
-  kind: "send" | "trustline";
+  kind: "send" | "trustline" | "agent-key-on" | "agent-key-off";
   xdr: string;
   hash: string;
   intentId?: string;
