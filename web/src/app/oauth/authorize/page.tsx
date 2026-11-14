@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { Consent } from "./consent";
 
-export const metadata = { title: "Connect an app · Wura" };
+export const metadata = { title: "Connect an app" };
 
 export default function AuthorizePage() {
   return (
