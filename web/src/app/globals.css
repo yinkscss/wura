@@ -89,12 +89,14 @@ body {
   background-size: 200% 100%;
 }
 
-/* In the base layer so a component's own outline-none (e.g. the chat input) wins. */
-@layer base {
-  :focus-visible {
-    outline: 2px solid var(--color-pink);
-    outline-offset: 2px;
-  }
+:focus-visible {
+  outline: 2px solid var(--color-pink);
+  outline-offset: 2px;
+}
+
+/* The chat box shows its caret; no outline there. */
+#chat-input:focus-visible {
+  outline: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
