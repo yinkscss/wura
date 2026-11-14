@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   const session = await sessionForUser(grant.userId);
   if (!session) return unauthorized(req, true);
 
-  const server = buildMcpServer(session, grant.scopes);
+  const server = buildMcpServer(session, grant.scopes, baseUrl(req));
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   return transport.handleRequest(req);

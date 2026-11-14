@@ -197,7 +197,10 @@ export function SendCard({
         <div className="nums mt-0.5 text-[40px] font-bold leading-none tracking-[-0.045em]">
           {usdcNumber(intent.amount)} <span className="text-pink-deep">USDC</span>
         </div>
-        <div className="mt-2 text-[14px] text-muted">to {intent.to.name} · from your USDC balance</div>
+        <div className="mt-2 text-[14px] text-muted">
+          to {intent.to.name}
+          {!intent.to.name.includes("…") && <span className="font-mono text-[12.5px]"> ({intent.to.address.slice(0, 4)}…{intent.to.address.slice(-4)})</span>} · from your USDC balance
+        </div>
       </div>
       <div className="h-px bg-line" />
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
