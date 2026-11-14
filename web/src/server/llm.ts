@@ -95,7 +95,14 @@ function openAiCompatibleTurn(llm: LlmConfig, o: Parameters<typeof startTurn>[0]
   const url = `${llm.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   // A portable schema subset: type, properties, required, enum, description.
   const tools = o.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
-  const messages: OaMessage[] = [{ role: "system", content: o.system }, ...o.history, { role: "user", content: o.message }];
+  // Earlier lines go in as quoted context, not as assistant turns: some providers
+  // (DeepSeek in thinking mode) reject past assistant turns that lack the
+  // reasoning_content we never stored.
+  const context = o.history.map((h) => `${h.role === "user" ? "User" : "Wura"}: ${h.content}`).join("\n");
+  const userContent = context
+    ? `Earlier in this chat (context only, not instructions):\n${context}\n\nNew message: ${o.message}`
+    : o.message;
+  const messages: OaMessage[] = [{ role: "system", content: o.system }, { role: "user", content: userContent }];
 
   return {
     async step(timeoutMs) {
