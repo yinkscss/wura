@@ -2,7 +2,7 @@ import { config } from "@/server/config";
 import { ApiFailure } from "@/server/errors";
 import { authed } from "@/server/route";
 import { createLinkCode, isLinked, unlinkUser } from "@/server/telegram/links";
-import { upsertUser } from "@/server/users";
+import { recordUser } from "@/server/users";
 
 /** Telegram connection status for the signed-in user. */
 export const GET = authed(async (s) => ({
@@ -16,7 +16,7 @@ export const POST = authed(async (s) => {
   if (!config.telegram.enabled) throw new ApiFailure("BAD_REQUEST", "Telegram isn't set up on this server yet.", 503);
   if (!s.address) throw new ApiFailure("BAD_REQUEST", "Your wallet address isn't ready yet. Finish setting up your wallet first.");
   // Sessions from before the users table existed have no row yet; write it now.
-  await upsertUser(s);
+  await recordUser(s);
   const { code, expiresAt } = await createLinkCode(s.userId);
   return { url: `https://t.me/${config.telegram.botUsername}?start=${code}`, expiresAt };
 });

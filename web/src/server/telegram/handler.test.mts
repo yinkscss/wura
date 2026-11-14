@@ -19,7 +19,7 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
 
 const { handleUpdate } = await import("./handler");
 const { createLinkCode } = await import("./links");
-const { upsertUser } = await import("../users");
+const { recordUser } = await import("../users");
 const { withWallet, wallet } = await import("../store");
 
 let uid = 1000;
@@ -36,7 +36,7 @@ async function tap(tg: number, data: string, text = "card text") {
 async function linkedUser() {
   const tg = ++uid;
   const userId = `mock:u${tg}@example.com`;
-  await upsertUser({ userId, email: `u${tg}@example.com`, address: `GB${tg}EXAMPLE`.padEnd(56, "X") });
+  await recordUser({ userId, email: `u${tg}@example.com`, address: `GB${tg}EXAMPLE`.padEnd(56, "X") });
   const { code } = await createLinkCode(userId);
   await say(tg, `/start ${code}`);
   return { tg, userId };
@@ -61,7 +61,7 @@ test("an unlinked chat is told how to connect and gets no model reply", async ()
 
 test("/start with a valid code links the chat; the code can't be reused", async () => {
   const userId = "mock:link@example.com";
-  await upsertUser({ userId, email: "link@example.com", address: "GBLINKEXAMPLE".padEnd(56, "X") });
+  await recordUser({ userId, email: "link@example.com", address: "GBLINKEXAMPLE".padEnd(56, "X") });
   const { code } = await createLinkCode(userId);
   await say(6001, `/start ${code}`);
   assert.match(sent()[0], /connected/i);

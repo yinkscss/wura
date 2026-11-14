@@ -7,7 +7,7 @@ import { ApiFailure } from "../errors";
 import type { Session } from "../session";
 import { approveSiteAction, cancelSiteAction, respondToConnect } from "../site-connect";
 import { withWallet } from "../store";
-import { getUser } from "../users";
+import { sessionForUser } from "../users";
 import { answerCallback, editMessage, sendMessage, sendTyping } from "./api";
 import { addToHistory, allowMessage, consumeLinkCode, firstSight, getHistory, linkedUserId, unlinkUser } from "./links";
 import { parseButton, renderCard, renderReply } from "./render";
@@ -55,7 +55,7 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
 async function sessionFor(telegramUserId: number): Promise<{ linked: boolean; session: Session | null }> {
   const userId = await linkedUserId(telegramUserId);
   if (!userId) return { linked: false, session: null };
-  return { linked: true, session: await getUser(userId) };
+  return { linked: true, session: await sessionForUser(userId) };
 }
 
 const SIGN_IN_AGAIN = "I can't find your Wura account details. Sign in to Wura on the web once more, then try again.";
@@ -81,7 +81,7 @@ async function onMessage(m: TgMessage) {
         await sendMessage(chatId, "That link expired or was already used. Make a new one on the Channels page in Wura.");
         return;
       }
-      if (!(await getUser(userId))) {
+      if (!(await sessionForUser(userId))) {
         await unlinkUser(userId);
         await sendMessage(chatId, SIGN_IN_AGAIN);
         return;

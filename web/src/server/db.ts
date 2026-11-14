@@ -50,15 +50,16 @@ create table if not exists activity (
 );
 create index if not exists activity_user_at on activity (user_id, at desc);
 
--- Who a user is, written on every sign-in. Chat channels build a Session from this.
+-- Who each user is, so channels without a browser cookie (Telegram, MCP)
+-- can rebuild a session from user_id. Written on every sign-in.
 create table if not exists users (
   user_id    text primary key,
   email      text not null,
   address    text not null,
   updated_at timestamptz not null default now()
 );
-
--- Telegram: only the link to a user_id is stored here, never email or address.
+-- Telegram: only the link to a user_id is stored here, never email or address
+-- (those come from the users table above).
 create table if not exists telegram_links (
   telegram_user_id bigint primary key,
   user_id          text not null unique,
