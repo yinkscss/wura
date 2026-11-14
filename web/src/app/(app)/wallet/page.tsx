@@ -69,6 +69,7 @@ export default function WalletPage() {
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         <motion.div {...rise(0)}>
           <StatCard
+            refreshable
             label="Naira balance"
             foot={data?.me.moneyMode === "testnet" ? "Naira on-ramp isn’t connected yet" : "Available to swap or send"}
           >
@@ -78,7 +79,7 @@ export default function WalletPage() {
           </StatCard>
         </motion.div>
         <motion.div {...rise(1)}>
-          <StatCard label="USDC balance" foot="No ID needed to hold or send USDC">
+          <StatCard refreshable label="USDC balance" foot="No ID needed to hold or send USDC">
             <div className="nums flex items-baseline gap-1.5 text-[38px] font-bold leading-none tracking-[-0.045em]">
               {data ? (
                 <>

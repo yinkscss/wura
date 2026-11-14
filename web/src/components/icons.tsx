@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-// Simple generic icons. No product or brand logos.
+// Simple generic icons. Brand logos live in brand-icons.tsx.
 type P = SVGProps<SVGSVGElement> & { size?: number };
 
 function Svg({ size = 16, children, ...rest }: P & { children: React.ReactNode }) {
@@ -119,6 +119,9 @@ export const BoltIcon = (p: P) => (
 );
 export const OutIcon = (p: P) => (
   <Svg {...p}><path d="M8 4.5H5a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 5 15.5h3M12.5 13.5L16 10l-3.5-3.5M16 10H8" {...stroke} /></Svg>
+);
+export const RefreshIcon = (p: P) => (
+  <Svg {...p}><path d="M16 10a6 6 0 1 1-1.9-4.4M16 3.5v3h-3" {...stroke} /></Svg>
 );
 export const MenuIcon = (p: P) => (
   <Svg {...p}><path d="M3.5 6h13M3.5 10h13M3.5 14h13" {...stroke} strokeWidth={1.8} /></Svg>
