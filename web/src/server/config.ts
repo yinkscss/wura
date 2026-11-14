@@ -60,6 +60,15 @@ export const config = {
   quoteTtlMs: 60_000,
   /** How long a built transaction waits for the user's signature. */
   signTtlMs: 120_000,
+  /**
+   * Chat brain. "claude" (default when ANTHROPIC_API_KEY is set) reads the
+   * message with Claude and calls the same preview-only money functions.
+   * "rules" is the small built-in parser, also used if Claude can't answer.
+   */
+  get agentBrain(): "claude" | "rules" {
+    if (process.env.AGENT_BRAIN === "rules") return "rules";
+    return process.env.ANTHROPIC_API_KEY ? "claude" : "rules";
+  },
 };
 
 /** True when real testnet transactions are signed by the user's Privy wallet. */

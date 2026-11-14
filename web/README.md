@@ -129,7 +129,8 @@ Otherwise the API returns an error, and nothing is signed. The caps are **exampl
   - any other example host: no contract found
 
   Real sites get a plain “I can only connect to the example sites in this preview”. There is no hosted browser.
-- **Chat** (`src/server/agent.ts`): a rule-based intent parser for the money commands. It only handles money questions. It returns quote and preview cards; it never moves money itself.
+- **Chat** (`src/server/agent.ts`): Claude (`claude-opus-5-5`, low effort) reads each message and calls the tools in `src/server/tools.ts`: rates, swap quote, send preview, payment link, balance, site connect. Every tool only prepares or reads; none approves, confirms or submits, so money still moves only when the user taps Approve, and the server re-checks caps then. The card in each reply comes from a real tool result, never from model text. Each tool call takes its own wallet lock, so the model call never holds the user's row. The browser sends the last 8 chat lines as plain text for follow-ups. Without `ANTHROPIC_API_KEY`, or if Claude fails or declines, the rule parser in `src/server/rules.ts` answers instead (`AGENT_BRAIN=rules` forces it). Server-side refusal fallbacks (`fallbacks: "default"`) are on.
+- **Chat eval** (`npm run agent-eval -- <url>`): ten fixed prompts against a mock-mode server, checking card types and that the activity log never grows. Makes real Claude calls.
 
 Claude, ChatGPT, Telegram and WhatsApp appear only as "connected apps" labels, marked as not connected yet. They use generic icons, not their logos.
 
