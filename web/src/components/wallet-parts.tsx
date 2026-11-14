@@ -73,13 +73,13 @@ export function ActivityTable({ rows, limit }: { rows: Activity[]; limit?: numbe
 }
 
 const APPS = [
-  { name: "Claude", kind: "Same assistant · chat plugin", tile: "bg-[#D97757] text-white", Logo: ClaudeLogo },
+  { name: "Claude", kind: "Connector · balance, rates, favourites", tile: "bg-[#D97757] text-white", Logo: ClaudeLogo, live: true },
   { name: "ChatGPT", kind: "Same assistant · chat plugin", tile: "bg-[#10A37F] text-white", Logo: ChatGPTLogo },
   { name: "Telegram", kind: "Same assistant · bot", tile: "bg-[#26A5E4] text-white", Logo: TelegramLogo },
   { name: "WhatsApp", kind: "Same assistant · bot", tile: "bg-[#25D366] text-white", Logo: WhatsAppLogo },
 ];
 
-/** Brand marks label each app. None of these channels are connected in v1. */
+/** Brand marks label each app. Claude is live as a connector; the rest are coming. */
 export function ConnectedApps({ big = false }: { big?: boolean }) {
   return (
     <div className="flex flex-col gap-3">
@@ -92,7 +92,7 @@ export function ConnectedApps({ big = false }: { big?: boolean }) {
             <div className="text-[15.5px] font-bold tracking-[-0.02em]">{a.name}</div>
             <div className="truncate text-[13px] text-muted">{a.kind}</div>
           </div>
-          <Pill tone="blue">Soon</Pill>
+          {"live" in a && a.live ? <Pill tone="pink">Live</Pill> : <Pill tone="blue">Soon</Pill>}
         </div>
       ))}
     </div>
