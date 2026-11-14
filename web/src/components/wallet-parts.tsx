@@ -1,7 +1,8 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import type { Activity } from "@/lib/types";
 import { when } from "@/lib/format";
 import { ChatGPTLogo, ClaudeLogo, TelegramLogo, WhatsAppLogo } from "./brand-icons";
@@ -79,8 +80,15 @@ const APPS = [
   { name: "WhatsApp", kind: "Same assistant · bot", tile: "bg-[#25D366] text-white", Logo: WhatsAppLogo },
 ];
 
-/** Brand marks label each app. `available` names channels that can be connected now. */
-export function ConnectedApps({ big = false, available = [] }: { big?: boolean; available?: string[] }) {
+/** Brand marks label each app. Telegram shows "Live" when this server has the bot set up. */
+export function ConnectedApps({ big = false }: { big?: boolean }) {
+  const [telegramOn, setTelegramOn] = useState(false);
+  useEffect(() => {
+    api<{ enabled: boolean }>("/api/telegram/link")
+      .then((s) => setTelegramOn(s.enabled))
+      .catch(() => {});
+  }, []);
+  const available = telegramOn ? ["Telegram"] : [];
   return (
     <div className="flex flex-col gap-3">
       {APPS.map((a) => (
@@ -92,7 +100,7 @@ export function ConnectedApps({ big = false, available = [] }: { big?: boolean; 
             <div className="text-[15.5px] font-bold tracking-[-0.02em]">{a.name}</div>
             <div className="truncate text-[13px] text-muted">{a.kind}</div>
           </div>
-          {available.includes(a.name) ? <Pill tone="pink">Connect below</Pill> : <Pill tone="blue">Soon</Pill>}
+          {available.includes(a.name) ? <Pill tone="pink">Live</Pill> : <Pill tone="blue">Soon</Pill>}
         </div>
       ))}
     </div>

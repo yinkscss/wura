@@ -8,6 +8,10 @@
 // Reads TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET from the environment or
 // from .env.local. Never prints either value.
 import { readFileSync } from "node:fs";
+import { setDefaultAutoSelectFamilyAttemptTimeout } from "node:net";
+
+// Node gives each connection attempt 250 ms by default; slow or IPv6-broken networks need longer.
+setDefaultAutoSelectFamilyAttemptTimeout(3000);
 
 function loadEnvLocal() {
   try {
@@ -63,6 +67,7 @@ try {
     console.log("Usage: node scripts/telegram-webhook.mjs set <https-origin> | info | delete");
   }
 } catch (e) {
-  console.error(e instanceof Error ? e.message : e);
+  const why = e instanceof Error && e.cause ? ` (${e.cause.code ?? e.cause.message})` : "";
+  console.error((e instanceof Error ? e.message : e) + why);
   process.exit(1);
 }
