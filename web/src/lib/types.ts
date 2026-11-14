@@ -50,9 +50,13 @@ export type Quote = {
   vsMarketPct?: number;
 };
 
+/** A saved recipient ("favourite"). */
+export type Contact = { name: string; address: string };
+
 export type SendIntent = {
   id: string;
-  to: { name: string; address: string };
+  /** `saved` is false when the user typed a raw address that isn't in their favourites. */
+  to: { name: string; address: string; saved?: boolean };
   asset: Currency;
   amount: number;
   fee: number;
@@ -132,6 +136,15 @@ export type WalletStatus = {
 /** A built transaction waiting for the user's wallet to sign its hash. */
 export type NeedsSignature = { status: "needs_signature"; txId: string; hash: string; address: string };
 
+/** Whether chat apps can approve sends from this wallet (testnet agent key). */
+export type ChatApprovalStatus = {
+  /** False when the server isn't set up for it (not testnet, or no AGENT_KEY_SECRET). */
+  available: boolean;
+  /** The agent key is a signer on the user's Stellar account right now (read from Horizon). */
+  active: boolean;
+  agentAddress?: string;
+};
+
 export type ApiErrorCode =
   | "UNAUTHENTICATED"
   | "NOT_APPROVED"
@@ -152,7 +165,8 @@ export type ApiErrorCode =
   | "SITE_UNSUPPORTED"
   | "CONTRACT_NOT_FOUND"
   | "CONTRACT_UNVERIFIED"
-  | "SIMULATION_FAILED";
+  | "SIMULATION_FAILED"
+  | "CHAT_APPROVAL_OFF";
 
 export type ApiError = { error: { code: ApiErrorCode; message: string } };
 
@@ -207,6 +221,7 @@ export type AgentCard =
   | { type: "rates"; quote: Quote }
   | { type: "refused"; code: ApiErrorCode; title: string; lines: string[] }
   | { type: "site-permission"; request: SiteConnectRequest; siteName: string }
-  | { type: "site-action"; action: SiteAction };
+  | { type: "site-action"; action: SiteAction }
+  | { type: "save-contact"; address: string };
 
 export type AgentReply = { text: string; card?: AgentCard };

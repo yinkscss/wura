@@ -46,13 +46,13 @@ export async function walletStatus(s: Session): Promise<WalletStatus> {
   };
 }
 
-function park(w: WalletState, tx: BuiltTx, kind: PendingTx["kind"], intentId?: string): PendingTx {
+export function park(w: WalletState, tx: BuiltTx, kind: PendingTx["kind"], intentId?: string): PendingTx {
   const p: PendingTx = { id: newId("tx"), kind, xdr: tx.xdr, hash: tx.hash, intentId, expiresAt: Date.now() + config.signTtlMs, status: "pending" };
   w.pendingTx.set(p.id, p);
   return p;
 }
 
-function needsSignature(s: Session, p: PendingTx): NeedsSignature {
+export function needsSignature(s: Session, p: PendingTx): NeedsSignature {
   return { status: "needs_signature", txId: p.id, hash: p.hash, address: s.address };
 }
 
@@ -93,7 +93,7 @@ export async function usdcBalance(s: Session) {
   return st.usdc ?? 0;
 }
 
-async function recheckSend(s: Session, w: WalletState, intent: SendIntent) {
+export async function recheckSend(s: Session, w: WalletState, intent: SendIntent) {
   if (intent.status !== "pending") throw new ApiFailure("ALREADY_USED", "That payment was already sent or cancelled.", 409);
   checkLimits(w, "USDC", intent.amount);
   const bal = await usdcBalance(s);
@@ -102,7 +102,7 @@ async function recheckSend(s: Session, w: WalletState, intent: SendIntent) {
   }
 }
 
-function finishSend(w: WalletState, intent: SendIntent, hash: string) {
+export function finishSend(w: WalletState, intent: SendIntent, hash: string) {
   intent.status = "sent";
   w.spentToday.USDC += intent.amount;
   return log(w, {
@@ -160,6 +160,7 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
   }
 
   if (p.kind === "trustline") return { status: "ready" as const, kind: p.kind, hash, wallet: await walletStatus(s) };
+  if (p.kind === "agent-key-on" || p.kind === "agent-key-off") return { status: "ready" as const, kind: p.kind, hash };
   const activity = finishSend(w, intent!, hash);
   return { status: "done" as const, kind: p.kind, hash, intent: intent!, activity, mock: false };
 }

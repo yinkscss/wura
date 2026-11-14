@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "testnet": "node scripts/testnet-setup.mjs",
+    "agent-eval": "node scripts/agent-eval.mjs",
     "test": "node --test tests/"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@privy-io/react-auth": "^3.51.4",
     "@solana-program/memo": "^0.10.0",
     "@solana-program/system": "^0.10.0",
