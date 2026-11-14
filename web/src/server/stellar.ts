@@ -71,7 +71,9 @@ export async function fundWithFriendbot(address: string) {
 
 export type BuiltTx = { xdr: string; hash: string };
 
-async function build(source: string, op: ReturnType<typeof Operation.payment> | ReturnType<typeof Operation.changeTrust>, memo?: string): Promise<BuiltTx> {
+type Op = ReturnType<typeof Operation.payment> | ReturnType<typeof Operation.changeTrust> | ReturnType<typeof Operation.setOptions>;
+
+async function build(source: string, op: Op, memo?: string): Promise<BuiltTx> {
   let account;
   try {
     account = await server().loadAccount(source);
@@ -93,6 +95,61 @@ export function buildUsdcPayment(from: string, to: string, cents: number) {
 
 export function buildUsdcTrustline(address: string) {
   return build(address, Operation.changeTrust({ asset: usdcAsset() }));
+}
+
+/**
+ * Chat approvals: adds Wura's agent key as a second signer. Weights tested on
+ * testnet: the user's own key gets weight 2 and the agent key 1, with
+ * thresholds low 1 / medium 1 / high 2. So the agent key can make payments
+ * (medium) but can't add or change signers, change thresholds or merge the
+ * account (high). The user's key alone can still do everything.
+ */
+export function buildAgentKeyOn(address: string, agentAddress: string) {
+  return build(
+    address,
+    Operation.setOptions({
+      masterWeight: 2,
+      lowThreshold: 1,
+      medThreshold: 1,
+      highThreshold: 2,
+      signer: { ed25519PublicKey: agentAddress, weight: 1 },
+    }),
+  );
+}
+
+/** Removes the agent key and puts the account back to the default single-key setup. */
+export function buildAgentKeyOff(address: string, agentAddress: string) {
+  return build(
+    address,
+    Operation.setOptions({
+      signer: { ed25519PublicKey: agentAddress, weight: 0 },
+      masterWeight: 1,
+      lowThreshold: 0,
+      medThreshold: 0,
+      highThreshold: 0,
+    }),
+  );
+}
+
+export type AccountSigners = {
+  exists: boolean;
+  signers: Array<{ key: string; weight: number }>;
+  thresholds: { low: number; med: number; high: number };
+};
+
+/** The account's signers and thresholds, straight from Horizon. */
+export async function getAccountSigners(address: string): Promise<AccountSigners> {
+  try {
+    const a = await server().loadAccount(address);
+    return {
+      exists: true,
+      signers: a.signers.map((x) => ({ key: x.key, weight: x.weight })),
+      thresholds: { low: a.thresholds.low_threshold, med: a.thresholds.med_threshold, high: a.thresholds.high_threshold },
+    };
+  } catch (err) {
+    if (isNotFound(err)) return { exists: false, signers: [], thresholds: { low: 0, med: 0, high: 0 } };
+    throw networkError(err);
+  }
 }
 
 /** Checks a 64-byte ed25519 signature over the transaction hash. */
