@@ -159,6 +159,7 @@ export async function getQuote(
   }
   const quote: Quote = {
     id: newId("q"),
+    createdAt: Date.now(),
     from: input.from,
     to: input.to,
     amountIn,
@@ -301,6 +302,13 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
       404,
     );
   }
+  const intent: SendIntent = { id: newId("snd"), createdAt: Date.now(), ...(await sendFigures(s, w, contact, asset, amount)) };
+  w.sends.set(intent.id, intent);
+  return intent;
+}
+
+/** Runs every check for a send and returns fresh numbers. Throws on any refusal. */
+async function sendFigures(s: Session, w: WalletState, contact: SendIntent["to"], asset: Currency, amount: number): Promise<Omit<SendIntent, "id">> {
   const testnet = config.moneyMode === "testnet";
   // On testnet the network fee is paid in test XLM, not USDC.
   const fee = testnet ? 0 : EXAMPLE_SEND_FEE;
@@ -317,8 +325,7 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
     checkBalance(w, asset, amount + fee);
   }
   const limits = limitsFor(w);
-  const intent: SendIntent = {
-    id: newId("snd"),
+  return {
     to: { name: contact.name, address: contact.address, saved: contact.saved },
     asset,
     amount,
@@ -331,8 +338,54 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
     expiresAt: Date.now() + config.quoteTtlMs,
     status: "pending",
   };
-  w.sends.set(intent.id, intent);
-  return intent;
+}
+
+/** An approval link rebuilds an expired preview for this long after it was first prepared. */
+const APPROVAL_LINK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const tooOld = (v: { createdAt?: number; expiresAt: number }) => Date.now() - (v.createdAt ?? v.expiresAt) > APPROVAL_LINK_MAX_AGE_MS;
+const APPROVAL_TOO_OLD = "This approval link is more than a day old, so it can't be used any more. Ask Claude to prepare it again.";
+
+const APPROVAL_NOT_FOUND =
+  "We couldn't find this in your Wura. Make sure you're signed in with the same email you used in Claude, or ask Claude to prepare it again.";
+
+/**
+ * Opens a preview from an approval link (/approve/<id>). Only the signed-in
+ * owner's previews are visible: any other id gets the same not-found answer.
+ * An expired, still-pending preview is rebuilt in place (same id) from the
+ * stored address and amount, with every check run again, so the link from
+ * the chat app keeps working but never approves stale numbers.
+ */
+export async function openApproval(s: Session, id: string): Promise<{ kind: "send"; intent: SendIntent } | { kind: "quote"; quote: Quote }> {
+  const w = wallet(s.userId);
+  const intent = w.sends.get(id);
+  if (intent) {
+    if (intent.status === "expired" || (intent.status === "pending" && Date.now() > intent.expiresAt)) {
+      if (tooOld(intent)) throw new ApiFailure("QUOTE_EXPIRED", APPROVAL_TOO_OLD, 410);
+      const contact = findContact(w, intent.to.address)!;
+      Object.assign(intent, await sendFigures(s, w, contact, intent.asset, intent.amount));
+    }
+    return { kind: "send", intent };
+  }
+  const quote = w.quotes.get(id);
+  if (quote) {
+    if (quote.status === "expired" || (quote.status === "pending" && Date.now() > quote.expiresAt)) {
+      if (tooOld(quote)) throw new ApiFailure("QUOTE_EXPIRED", APPROVAL_TOO_OLD, 410);
+      precheckSwap(s, quote.from, quote.amountIn);
+      const fresh = await getQuote(s, { from: quote.from, to: quote.to, amountIn: quote.amountIn });
+      w.quotes.delete(fresh.id);
+      Object.assign(quote, { ...fresh, id: quote.id, createdAt: quote.createdAt });
+    }
+    return { kind: "quote", quote };
+  }
+  throw new ApiFailure("INTENT_NOT_FOUND", APPROVAL_NOT_FOUND, 404);
+}
+
+/** Previews still waiting for the user (for the per-user cap on chat apps). */
+export function openPreviewCount(s: Session) {
+  const w = wallet(s.userId);
+  const now = Date.now();
+  const open = (v: { status: string; expiresAt: number }) => v.status === "pending" && v.expiresAt > now;
+  return [...w.sends.values()].filter(open).length + [...w.quotes.values()].filter(open).length;
 }
 
 /** Step 2: send it. Re-checks everything; the preview is not trusted on its own. */

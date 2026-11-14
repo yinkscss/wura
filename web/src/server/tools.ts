@@ -4,7 +4,7 @@ import { money, naira, rate, usdc } from "@/lib/format";
 import { config } from "./config";
 import type { ToolSpec } from "./llm";
 import { ApiFailure } from "./errors";
-import { createPaymentLink, getBalances, getLimits, getQuote, listContacts, precheckSwap, previewSend, saveContact } from "./money";
+import { createPaymentLink, getActivity, getBalances, getLimits, getQuote, listContacts, precheckSwap, previewSend, saveContact } from "./money";
 import { marketNote } from "./rules";
 import type { Session } from "./session";
 import { requestSiteConnect } from "./site-connect";
@@ -71,6 +71,7 @@ export const TOOLS: ToolSpec[] = [
     ["name", "address"],
   ),
   tool("list_contacts", "List the user's saved favourites (names and addresses).", {}, []),
+  tool("get_activity", "The user's recent activity (sends, swaps, payment links), newest first. Use for 'did it go through?'.", {}, []),
   tool("get_balance", "Show the user's balances and how much they can still spend today under their limits.", {}, []),
   tool(
     "connect_site",
@@ -172,6 +173,17 @@ async function run(s: Session, name: string, input: Record<string, unknown>): Pr
       const list = listContacts(s);
       return {
         content: JSON.stringify(list.length ? list.map((c) => ({ name: c.name, address: `${c.address.slice(0, 4)}…${c.address.slice(-4)}` })) : "No favourites saved yet."),
+        isError: false,
+      };
+    }
+    case "get_activity": {
+      const items = getActivity(s).slice(0, 10);
+      return {
+        content: JSON.stringify(
+          items.length
+            ? items.map((a) => ({ when: new Date(a.at).toISOString(), kind: a.kind, detail: a.detail, amount: a.amount, status: a.status, explorer: a.explorerUrl ?? null }))
+            : "No activity yet.",
+        ),
         isError: false,
       };
     }

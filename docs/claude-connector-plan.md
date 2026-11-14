@@ -110,6 +110,12 @@ Reuse `TOOLS` and `runTool` from `tools.ts`. Each tool gets a `title` and an hon
    - Run the MCP Apps checks from the stretch section.
 2. **Auth.** `users` table (shared), OAuth tables and endpoints, consent page, connected apps with Revoke on Channels.
 3. **Tools and the approval page.** All tools over `runTool`, the `/approve/<id>` page with rebuild-on-expiry, `get_activity`.
+   - **Built (15 Nov):** `/mcp` has `get_balance`, `get_rates`, `list_contacts`, `get_activity` (wura.read) and `preview_send`, `prepare_swap`, `create_payment_link`, `save_contact` (wura.prepare). Prepare results are plain text with the approval link.
+   - At most 5 open previews per user. `save_contact` refuses to point an existing name at a new address, and the send card shows the short address next to the name.
+   - `/approve/<id>` sits outside the app shell. It opens via `POST /api/approve`: owner only, with the same "not found" answer for everyone else. An expired preview is rebuilt **in place** (same id) with every check run again, so the link in the chat never goes stale.
+   - Confirming uses the same path as the web chat (Privy signs in the browser).
+   - Approval links rebuild for up to 24 h after they were first prepared. Previews older than 2 days are pruned, approved or not.
+   - Not done yet: the per-token rate limit.
 4. **In-chat Approve (stretch).** Only if the spike passed. MCP App card, app-only approve with a one-time code, agent-key signing.
 5. **ChatGPT.** Add the same `/mcp` as a custom MCP server in ChatGPT. Add CIMD if ChatGPT needs it beyond DCR. Publishing to ChatGPT's app directory needs organization verification and a privacy policy; that's a separate decision.
 

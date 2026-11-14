@@ -1,30 +1,55 @@
 import "server-only";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { naira, usdc } from "@/lib/format";
+import type { Currency } from "@/lib/types";
+import { config } from "./config";
+import { openPreviewCount } from "./money";
 import type { Scope } from "./oauth";
 import type { Session } from "./session";
-import { runTool } from "./tools";
+import { withWallet } from "./store";
+import { runTool, type ToolOutcome } from "./tools";
 
 /**
  * Wura's MCP server for Claude / ChatGPT (docs/claude-connector-plan.md).
  * Built per request for the signed-in user from the OAuth token.
  *
- * Phase 2: read-only tools. Preparing sends and swaps, and the in-chat
- * Approve card, come in phases 3 and 4. No tool here ever moves money.
+ * Phase 3: read tools plus "prepare" tools. A prepared send or swap comes
+ * back with an approval link (/approve/<id>); the user opens it, signs in to
+ * Wura and confirms there. No tool here approves, confirms or submits.
  */
-export function buildMcpServer(s: Session, scopes: Scope[]) {
+
+/** Open (unapproved, unexpired) previews a chat app may keep per user. */
+const MAX_OPEN_PREVIEWS = 5;
+
+type Result = { content: { type: "text"; text: string }[]; isError: boolean };
+const reply = (text: string, isError = false): Result => ({ content: [{ type: "text", text }], isError });
+
+const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
+const fmt = (minor: number, c: Currency) => (c === "NGN" ? naira(minor) : usdc(minor));
+
+export function buildMcpServer(s: Session, scopes: Scope[], base: string) {
   const server = new McpServer(
-    { name: "wura", version: "0.2.0" },
+    { name: "wura", version: "0.3.0" },
     {
       instructions:
-        "Wura is a money assistant for naira and USDC on Stellar. Use these tools to check balances, limits, rates and favourites. Wura never moves money from a tool call: every swap or send needs the user's own approval in Wura.",
+        "Wura is a money assistant for naira and USDC on Stellar. Use these tools to check balances, limits, rates, favourites and activity, and to prepare sends, swaps and payment links. Wura never moves money from a tool call: a prepared send or swap comes with an approval link, and nothing happens until the user opens it and confirms in Wura. Always give the user the link.",
     },
   );
   const can = (scope: Scope) => scopes.includes(scope);
+  const approveUrl = (id: string) => `${base}/approve/${encodeURIComponent(id)}`;
 
-  const text = async (name: string, input: Record<string, unknown>) => {
+  // Refusals (limits, balance, unknown contact) come back as the plain reason.
+  const refusal = (out: ToolOutcome) => reply(out.note ?? out.content, true);
+  const raw = async (name: string, input: Record<string, unknown>) => {
     const out = await runTool(s, name, input);
-    return { content: [{ type: "text" as const, text: out.content }], isError: out.isError };
+    return out.isError ? refusal(out) : reply(out.content);
+  };
+  const tooMany = async () => {
+    const open = await withWallet(s.userId, async () => openPreviewCount(s));
+    return open >= MAX_OPEN_PREVIEWS
+      ? reply(`There are already ${open} previews waiting for approval. Approve or let them expire, then try again.`, true)
+      : null;
   };
 
   if (can("wura.read")) {
@@ -36,7 +61,7 @@ export function buildMcpServer(s: Session, scopes: Scope[]) {
         inputSchema: {},
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
-      () => text("get_balance", {}),
+      () => raw("get_balance", {}),
     );
     server.registerTool(
       "get_rates",
@@ -47,7 +72,7 @@ export function buildMcpServer(s: Session, scopes: Scope[]) {
         inputSchema: { amount_naira: z.number().positive().describe("Whole naira, e.g. 50000. Use 50000 if the user gave none.") },
         annotations: { readOnlyHint: true, openWorldHint: true },
       },
-      ({ amount_naira }) => text("get_rates", { amount_naira }),
+      ({ amount_naira }) => raw("get_rates", { amount_naira }),
     );
     server.registerTool(
       "list_contacts",
@@ -57,7 +82,108 @@ export function buildMcpServer(s: Session, scopes: Scope[]) {
         inputSchema: {},
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
-      () => text("list_contacts", {}),
+      () => raw("list_contacts", {}),
+    );
+    server.registerTool(
+      "get_activity",
+      {
+        title: "Recent activity",
+        description: "The user's recent sends, swaps and payment links, newest first. Use it to answer 'did it go through?' after they approve.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      () => raw("get_activity", {}),
+    );
+  }
+
+  if (can("wura.prepare")) {
+    server.registerTool(
+      "preview_send",
+      {
+        title: "Prepare a USDC send",
+        description:
+          "Prepare a USDC send to a saved favourite (by name) or a Stellar address starting with G. It sends nothing: it returns an approval link the user must open to confirm in Wura. Give the user the link.",
+        inputSchema: {
+          to: z.string().min(1).describe("Favourite's name exactly as the user wrote it, or a full Stellar G… address."),
+          amount_usdc: z.number().positive().describe("USDC amount in dollars, e.g. 20 or 12.5."),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      },
+      async ({ to, amount_usdc }) => {
+        const busy = await tooMany();
+        if (busy) return busy;
+        const out = await runTool(s, "preview_send", { to, amount_usdc });
+        if (out.isError || out.card?.type !== "send") return refusal(out);
+        const i = out.card.intent;
+        const testnet = config.moneyMode === "testnet";
+        return reply(
+          [
+            `Prepared, not sent: ${usdc(i.amount)} to ${i.to.saved ? `${i.to.name} (${short(i.to.address)})` : short(i.to.address)}.`,
+            i.fee ? `Fee ${usdc(i.fee)}, total ${usdc(i.total)}.` : "Network fee is paid in test XLM.",
+            `Network: ${testnet ? "Stellar testnet (real test USDC)" : "mock (nothing is broadcast)"}.`,
+            `To send it, the user opens this link, signs in to Wura and confirms: ${approveUrl(i.id)}`,
+            "If the link is opened after a minute, Wura checks everything again and shows fresh numbers before they confirm.",
+            i.to.saved === false ? "This address isn't in their favourites. After it goes through they can save it with a name." : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        );
+      },
+    );
+    server.registerTool(
+      "prepare_swap",
+      {
+        title: "Prepare a naira ↔ USDC swap",
+        description:
+          "Get a swap quote between naira and USDC. It swaps nothing: it returns an approval link the user must open to approve in Wura. Give the user the link.",
+        inputSchema: {
+          from: z.enum(["NGN", "USDC"]).describe("Currency the user pays with. Dollars mean USDC."),
+          amount: z.number().positive().describe("Amount of the `from` currency in major units, e.g. 50000 or 20.5."),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      },
+      async ({ from, amount }) => {
+        const busy = await tooMany();
+        if (busy) return busy;
+        const out = await runTool(s, "prepare_swap", { from, amount });
+        if (out.isError || out.card?.type !== "quote") return refusal(out);
+        const q = out.card.quote;
+        return reply(
+          [
+            `Quote, not swapped: pay ${fmt(q.amountIn, q.from)}, get about ${fmt(q.amountOut, q.to)} via ${q.venues[0].name}.`,
+            `Details: ${out.content}`,
+            `To swap, the user opens this link, signs in to Wura and approves: ${approveUrl(q.id)}`,
+            "If the link is opened after a minute, Wura gets a fresh quote before they approve.",
+          ].join("\n"),
+        );
+      },
+    );
+    server.registerTool(
+      "create_payment_link",
+      {
+        title: "Create a payment link",
+        description: "Create a link someone else can use to pay the user. No money leaves the user's wallet.",
+        inputSchema: {
+          amount: z.number().positive().describe("Amount in major units, e.g. 15000 naira or 20 dollars."),
+          currency: z.enum(["NGN", "USDC"]),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      },
+      ({ amount, currency }) => raw("create_payment_link", { amount, currency }),
+    );
+    server.registerTool(
+      "save_contact",
+      {
+        title: "Save a favourite",
+        description:
+          "Save a Stellar address under a name in the user's favourites. Only when the user asks. A name already saved with a different address is refused.",
+        inputSchema: {
+          name: z.string().min(1).describe("The name to save, e.g. Isaac or Mum."),
+          address: z.string().min(1).describe("The full Stellar G… address, exactly as the user gave it."),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      ({ name, address }) => raw("save_contact", { name, address }),
     );
   }
   return server;

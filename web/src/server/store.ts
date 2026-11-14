@@ -191,10 +191,10 @@ type Stored = Omit<WalletState, "activity" | "pendingTx" | "quotes" | "sends" | 
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** Keep pending items; drop finished ones once they're a couple of days old. */
+/** Drop items (finished or never approved) once they're a couple of days old. */
 function prune<T extends { status: string }>(m: Map<string, T>, when: (v: T) => number) {
   const cutoff = Date.now() - 2 * DAY;
-  return [...m.entries()].filter(([, v]) => v.status === "pending" || when(v) > cutoff);
+  return [...m.entries()].filter(([, v]) => when(v) > cutoff);
 }
 
 function serialize(w: WalletState): Stored {
