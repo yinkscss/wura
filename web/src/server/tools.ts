@@ -78,7 +78,8 @@ export const TOOLS: Anthropic.Beta.BetaTool[] = [
   ),
 ];
 
-export type ToolOutcome = { content: string; isError: boolean; card?: AgentCard };
+/** `note` is a plain reply to show if the model gives no text of its own. */
+export type ToolOutcome = { content: string; isError: boolean; card?: AgentCard; note?: string };
 
 /** Major units (naira, dollars) → minor units (kobo, cents). */
 function toMinor(major: unknown, label: string) {
@@ -213,6 +214,7 @@ export async function runTool(s: Session, name: string, input: unknown): Promise
         content: JSON.stringify({ refused: err.code, message: err.message }),
         isError: true,
         card: { type: "refused", code: err.code, title, lines: [] },
+        note: err.message,
       };
     }
     throw err;

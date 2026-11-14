@@ -19,6 +19,11 @@ const MODEL = "claude-opus-5-5";
 const MAX_STEPS = 4;
 const HISTORY_TURNS = 8;
 const HISTORY_CHARS = 600;
+/** Whole-message budget, well inside the route's 60s maxDuration. */
+const DEADLINE_MS = 35_000;
+const PREPARED = "Here's what I prepared. Check the card before you approve.";
+
+type Prepared = { card: AgentCard; note?: string };
 
 export type ChatTurn = { role: "user" | "agent"; text: string };
 
@@ -41,7 +46,7 @@ How you work:
 
 let client: Anthropic | null = null;
 function anthropic() {
-  client ??= new Anthropic({ timeout: 25_000, maxRetries: 1 });
+  client ??= new Anthropic({ timeout: 15_000, maxRetries: 1 });
   return client;
 }
 
@@ -58,23 +63,25 @@ function historyMessages(history: ChatTurn[]): Anthropic.Beta.BetaMessageParam[]
 export async function handleMessage(s: Session, message: string, history: ChatTurn[] = []): Promise<AgentReply> {
   if (config.agentBrain === "rules") return withWallet(s.userId, () => ruleReply(s, message));
 
-  const cards: AgentCard[] = [];
+  const prepared: Prepared[] = [];
   try {
-    return await claudeReply(s, message, history, cards);
+    return await claudeReply(s, message, history, prepared);
   } catch (err) {
     console.error("agent: Claude failed, using rules", err instanceof Error ? err.message : err);
     // Something was already prepared this turn: show it rather than preparing it twice.
-    const card = cards.at(-1);
-    if (card) return { text: "Here's what I prepared. Check the card before you approve.", card };
+    if (prepared.length) return reply("", prepared);
     return withWallet(s.userId, () => ruleReply(s, message));
   }
 }
 
-async function claudeReply(s: Session, message: string, history: ChatTurn[], cards: AgentCard[]): Promise<AgentReply> {
+async function claudeReply(s: Session, message: string, history: ChatTurn[], prepared: Prepared[]): Promise<AgentReply> {
+  const deadline = Date.now() + DEADLINE_MS;
   const messages: Anthropic.Beta.BetaMessageParam[] = [...historyMessages(history), { role: "user", content: message }];
   const used = new Set<string>();
 
   for (let step = 0; step < MAX_STEPS; step++) {
+    const left = deadline - Date.now();
+    if (left < 3_000) throw new Error("out of time for this message");
     const res = await anthropic().beta.messages.create({
       model: MODEL,
       max_tokens: 8000,
@@ -84,7 +91,7 @@ async function claudeReply(s: Session, message: string, history: ChatTurn[], car
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
       tools: TOOLS,
       messages,
-    });
+    }, { timeout: Math.min(15_000, left) });
 
     if (res.stop_reason === "refusal") throw new Error("Claude declined the message");
 
@@ -96,7 +103,7 @@ async function claudeReply(s: Session, message: string, history: ChatTurn[], car
     const calls = res.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
 
     if (res.stop_reason !== "tool_use" || calls.length === 0) {
-      return reply(text, cards);
+      return reply(text, prepared);
     }
 
     messages.push({ role: "assistant", content: res.content });
@@ -110,7 +117,7 @@ async function claudeReply(s: Session, message: string, history: ChatTurn[], car
       } else {
         used.add(call.name);
         const out = await runTool(s, call.name, call.input);
-        if (out.card) cards.push(out.card);
+        if (out.card) prepared.push({ card: out.card, note: out.note });
         content = out.content;
         isError = out.isError;
       }
@@ -119,12 +126,13 @@ async function claudeReply(s: Session, message: string, history: ChatTurn[], car
     messages.push({ role: "user", content: results });
   }
 
-  return reply("", cards);
+  return reply("", prepared);
 }
 
-function reply(text: string, cards: AgentCard[]): AgentReply {
-  const card = cards.at(-1);
+function reply(text: string, prepared: Prepared[]): AgentReply {
+  const last = prepared.at(-1);
+  const card = last?.card;
   if (text) return card ? { text, card } : { text };
-  if (card) return { text: "Here's what I prepared. Check the card before you approve.", card };
+  if (card) return { text: last.note ?? PREPARED, card };
   return { text: "Sorry, I didn't catch that. I can change naira and dollars, send USDC, make payment links and check your balance." };
 }
