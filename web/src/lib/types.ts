@@ -132,6 +132,15 @@ export type WalletStatus = {
 /** A built transaction waiting for the user's wallet to sign its hash. */
 export type NeedsSignature = { status: "needs_signature"; txId: string; hash: string; address: string };
 
+/** Whether chat apps can approve sends from this wallet (testnet agent key). */
+export type ChatApprovalStatus = {
+  /** False when the server isn't set up for it (not testnet, or no AGENT_KEY_SECRET). */
+  available: boolean;
+  /** The agent key is a signer on the user's Stellar account right now (read from Horizon). */
+  active: boolean;
+  agentAddress?: string;
+};
+
 export type ApiErrorCode =
   | "UNAUTHENTICATED"
   | "NOT_APPROVED"
@@ -152,7 +161,8 @@ export type ApiErrorCode =
   | "SITE_UNSUPPORTED"
   | "CONTRACT_NOT_FOUND"
   | "CONTRACT_UNVERIFIED"
-  | "SIMULATION_FAILED";
+  | "SIMULATION_FAILED"
+  | "CHAT_APPROVAL_OFF";
 
 export type ApiError = { error: { code: ApiErrorCode; message: string } };
 

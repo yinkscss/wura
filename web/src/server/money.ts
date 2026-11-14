@@ -10,7 +10,8 @@ import type {
   SendIntent,
 } from "@/lib/types";
 import { money, naira, usdc } from "@/lib/format";
-import { config } from "./config";
+import { chatApprovalsAvailable, chatApprovalStatus, sendWithAgentKey } from "./agent-key";
+import { config, serverDevSigning } from "./config";
 import { ApiFailure } from "./errors";
 import { compareVenues, EXAMPLE_FEE_BPS, marketRate, quoteSource } from "./routing";
 import type { Session } from "./session";
@@ -284,7 +285,12 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
 }
 
 /** Step 2: send it. Re-checks everything; the preview is not trusted on its own. */
-export async function createSend(s: Session, input: { intentId: string; approve: unknown }) {
+/**
+ * `via: "chat"` is for chat channels (Telegram, WhatsApp, MCP) after the linked
+ * user tapped Approve: on testnet it signs with the agent key (agent-key.ts)
+ * instead of asking the browser wallet. Never reachable from the web routes.
+ */
+export async function createSend(s: Session, input: { intentId: string; approve: unknown; via?: "web" | "chat" }) {
   const w = wallet(s.userId);
   const intent = w.sends.get(String(input.intentId));
   if (!intent) throw new ApiFailure("INTENT_NOT_FOUND", "That payment preview doesn't exist. Ask again.", 404);
@@ -299,6 +305,17 @@ export async function createSend(s: Session, input: { intentId: string; approve:
     throw new ApiFailure("NOT_APPROVED", "Nothing was sent. A payment only goes ahead when you confirm it.", 403);
   }
   if (config.moneyMode === "testnet") {
+    if (input.via === "chat") {
+      // Agent key when the user turned chat approvals on; the server's dev key
+      // (TESTNET_SIGNER=server-dev) also works without a browser.
+      if (chatApprovalsAvailable() && (await chatApprovalStatus(s)).active) return sendWithAgentKey(s, intent);
+      if (serverDevSigning()) return startTestnetSend(s, intent);
+      throw new ApiFailure(
+        "CHAT_APPROVAL_OFF",
+        "Chat approvals are off for your wallet. Turn them on in Wura on the web (Channels), then try again.",
+        403,
+      );
+    }
     // Builds the real transaction; the user's wallet signs it next.
     return startTestnetSend(s, intent);
   }
