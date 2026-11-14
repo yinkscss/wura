@@ -15,6 +15,8 @@ Status: plan only. Nothing here is built. It follows `main` as of 14 Nov 2026 (t
 
 ## Approval: link first, in-chat button as a stretch
 
+**Decision (14 Nov):** try the in-chat button. The link stays as the fallback for clients without MCP Apps, and for when chat approvals are off. The button ships only if the spike passes.
+
 **Baseline (works everywhere):**
 1. `prepare_send` / `prepare_swap` return the preview plus an approval link: `https://<domain>/approve/<id>`.
 2. The user taps it. Wura opens in their browser. They sign in if needed, and the existing confirm flow runs: the Privy wallet signs in the browser, and the server re-checks and submits. This doesn't need chat approvals (the agent key).
@@ -125,7 +127,6 @@ Reuse `TOOLS` and `runTool` from `tools.ts`. Each tool gets a `title` and an hon
 ## Open questions
 
 - Who builds the shared `users` table (this plan or Telegram phase 1)?
-- In-chat Approve: link only for the buildathon, or link plus the MCP App button if the spike passes?
 - A production Privy app with allowed origins is still pending. It matters here because the approval page signs with Privy.
 - Domain: the connector URL is permanent for users who add it. Decide the final domain before sharing it widely.
 
