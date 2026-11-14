@@ -5,6 +5,7 @@ import { ApiFailure, errorResponse } from "@/server/errors";
 import { jsonBody } from "@/server/route";
 import { SESSION_COOKIE, createSessionToken, sessionCookieOptions } from "@/server/session";
 import { randomMockAddress } from "@/server/strkey";
+import { upsertUser } from "@/server/users";
 
 // Mock email sign-in, only when Privy is not configured.
 // Any 6-digit code is accepted. No email is sent.
@@ -29,12 +30,14 @@ export async function POST(req: NextRequest) {
     if (!/^\d{6}$/.test(code)) {
       throw new ApiFailure("BAD_REQUEST", "The code is 6 digits.");
     }
-    const token = await createSessionToken({
+    const session = {
       userId: `mock:${email}`,
       email,
       // server-dev: a throwaway testnet key derived from the email, so the address is real.
       address: serverDevSigning() ? devKeypairFor(email).publicKey() : randomMockAddress(),
-    });
+    };
+    await upsertUser(session);
+    const token = await createSessionToken(session);
     const res = NextResponse.json({ ok: true });
     res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
     return res;

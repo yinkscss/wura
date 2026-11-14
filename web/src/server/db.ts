@@ -49,6 +49,37 @@ create table if not exists activity (
   explorer_url text
 );
 create index if not exists activity_user_at on activity (user_id, at desc);
+
+-- Who a user is, written on every sign-in. Chat channels build a Session from this.
+create table if not exists users (
+  user_id    text primary key,
+  email      text not null,
+  address    text not null,
+  updated_at timestamptz not null default now()
+);
+
+-- Telegram: only the link to a user_id is stored here, never email or address.
+create table if not exists telegram_links (
+  telegram_user_id bigint primary key,
+  user_id          text not null unique,
+  history          jsonb not null default '[]',
+  created_at       timestamptz not null default now()
+);
+create table if not exists telegram_link_codes (
+  code_hash  text primary key,
+  user_id    text not null,
+  expires_at timestamptz not null
+);
+create table if not exists telegram_rate (
+  telegram_user_id bigint not null,
+  window_start     timestamptz not null,
+  count            integer not null default 0,
+  primary key (telegram_user_id, window_start)
+);
+create table if not exists telegram_updates (
+  update_id bigint primary key,
+  at        timestamptz not null default now()
+);
 `;
 
 /** Creates the tables once per process (idempotent). Also: npm run db:migrate. */

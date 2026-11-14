@@ -79,8 +79,8 @@ const APPS = [
   { name: "WhatsApp", kind: "Same assistant · bot", tile: "bg-[#25D366] text-white", Logo: WhatsAppLogo },
 ];
 
-/** Brand marks label each app. None of these channels are connected in v1. */
-export function ConnectedApps({ big = false }: { big?: boolean }) {
+/** Brand marks label each app. `available` names channels that can be connected now. */
+export function ConnectedApps({ big = false, available = [] }: { big?: boolean; available?: string[] }) {
   return (
     <div className="flex flex-col gap-3">
       {APPS.map((a) => (
@@ -92,7 +92,7 @@ export function ConnectedApps({ big = false }: { big?: boolean }) {
             <div className="text-[15.5px] font-bold tracking-[-0.02em]">{a.name}</div>
             <div className="truncate text-[13px] text-muted">{a.kind}</div>
           </div>
-          <Pill tone="blue">Soon</Pill>
+          {available.includes(a.name) ? <Pill tone="pink">Connect below</Pill> : <Pill tone="blue">Soon</Pill>}
         </div>
       ))}
     </div>
