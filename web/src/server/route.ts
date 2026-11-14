@@ -5,6 +5,12 @@ import { getSession, type Session } from "./session";
 import { withWallet } from "./store";
 
 /** Wraps a route handler: requires a session and turns ApiFailure into JSON errors. */
+/**
+ * Wallet-locked handler. Don't query other tables (users, OAuth, Telegram)
+ * inside it: holding the row lock while waiting for a second pool connection
+ * can starve the pool when one user's requests arrive together. Use
+ * signedIn() for those, and take withWallet() only around wallet work.
+ */
 export function authed<T>(fn: (s: Session, req: NextRequest) => Promise<T> | T) {
   return async (req: NextRequest) => {
     try {

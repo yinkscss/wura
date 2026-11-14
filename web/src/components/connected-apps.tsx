@@ -45,8 +45,8 @@ export function ConnectedAppsCard() {
       <div>
         <h2 className="text-[20px] font-bold tracking-[-0.03em]">Connected apps</h2>
         <p className="mt-1 text-[14.5px] text-muted">
-          AI apps you’ve let use your Wura, like Claude. Right now they can check your balance, rates and favourites. They
-          can’t move money.
+          AI apps you’ve let use your Wura, like Claude. They can check balances and prepare payments, but nothing moves until
+          you confirm in Wura.
         </p>
       </div>
       {apps === null ? (
