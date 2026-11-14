@@ -58,6 +58,40 @@ create table if not exists users (
   address    text not null,
   updated_at timestamptz not null default now()
 );
+
+-- OAuth for the MCP connector (Claude, ChatGPT). Codes and tokens are stored
+-- as SHA-256 hashes, never in the clear.
+create table if not exists oauth_clients (
+  client_id     text primary key,
+  client_name   text not null,
+  redirect_uris jsonb not null,
+  created_at    timestamptz not null default now()
+);
+create table if not exists oauth_codes (
+  code_hash      text primary key,
+  client_id      text not null,
+  user_id        text not null,
+  redirect_uri   text not null,
+  code_challenge text not null,
+  scopes         text not null,
+  resource       text not null,
+  expires_at     timestamptz not null,
+  used_at        timestamptz
+);
+create table if not exists oauth_tokens (
+  token_hash   text primary key,
+  kind         text not null,
+  family       text not null,
+  client_id    text not null,
+  user_id      text not null,
+  scopes       text not null,
+  resource     text not null,
+  expires_at   timestamptz not null,
+  revoked_at   timestamptz,
+  last_used_at timestamptz,
+  created_at   timestamptz not null default now()
+);
+create index if not exists oauth_tokens_user on oauth_tokens (user_id, client_id);
 -- Telegram: only the link to a user_id is stored here, never email or address
 -- (those come from the users table above).
 create table if not exists telegram_links (

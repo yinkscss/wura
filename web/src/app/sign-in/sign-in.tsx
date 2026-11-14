@@ -17,6 +17,10 @@ type Handlers = {
   sendCode: (email: string) => Promise<void>;
   verify: (email: string, code: string) => Promise<{ firstTime: boolean }>;
   mock: boolean;
+  /** Privy already knows this browser: offer "Continue as …" instead of a new code. */
+  existingEmail?: string | null;
+  /** Forget that Privy session, to sign in with a different email. */
+  forgetExisting?: () => Promise<void>;
 };
 
 export function SignIn() {
@@ -61,7 +65,8 @@ function PrivySignIn() {
       userRef.current = user;
     },
   });
-  const { getAccessToken, user, authenticated } = usePrivy();
+  const { getAccessToken, user, authenticated, ready, logout } = usePrivy();
+  const existingEmail = ready && authenticated ? (user?.email?.address ?? null) : null;
   const { createWallet } = useCreateWallet();
   useEffect(() => {
     if (user) userRef.current = user;
@@ -71,6 +76,11 @@ function PrivySignIn() {
     <SignInScreen
       handlers={{
         mock: false,
+        existingEmail,
+        async forgetExisting() {
+          await logout();
+          userRef.current = null;
+        },
         async sendCode(email) {
           await sendCode({ email });
         },
@@ -105,6 +115,8 @@ function SignInScreen({ handlers }: { handlers: Handlers }) {
   const params = useSearchParams();
   const next = params.get("next");
   const [step, setStep] = useState<Step>("email");
+  const [differentEmail, setDifferentEmail] = useState(false);
+  const existing = !differentEmail && step === "email" ? handlers.existingEmail : null;
   const [email, setEmail] = useState("");
   const [digits, setDigits] = useState<string[]>(Array(6).fill(""));
   const [busy, setBusy] = useState(false);
@@ -129,18 +141,25 @@ function SignInScreen({ handlers }: { handlers: Handlers }) {
     }
   }
 
-  async function submitCode(code: string) {
+  async function submitCode(code: string, asEmail?: string) {
     setError(null);
     setBusy(true);
     setStep("wallet");
     try {
       const [{ firstTime }] = await Promise.all([
-        handlers.verify(email.trim().toLowerCase(), code),
+        handlers.verify((asEmail ?? email).trim().toLowerCase(), code),
         new Promise((r) => setTimeout(r, 1400)), // let the wallet moment land
       ]);
       const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
       router.replace(safeNext ?? (firstTime ? "/onboarding" : "/wallet"));
     } catch (err) {
+      if (asEmail) {
+        // Continuing an existing session failed: fall back to a fresh email code.
+        setDifferentEmail(true);
+        setStep("email");
+        setError(err instanceof Error ? err.message : "Couldn't continue. Sign in with your email instead.");
+        return;
+      }
       setStep("code");
       setDigits(Array(6).fill(""));
       setError(err instanceof Error ? err.message : "That code didn't work. Try again.");
@@ -218,7 +237,44 @@ function SignInScreen({ handlers }: { handlers: Handlers }) {
         >
           <Card className="relative overflow-hidden rounded-card-lg p-7 text-blue shadow-deep sm:p-8">
             <AnimatePresence mode="wait" initial={false}>
-              {step === "email" && (
+              {existing && (
+                <motion.div
+                  key="continue"
+                  initial={{ opacity: 0, x: -16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -16 }}
+                  transition={{ duration: 0.25 }}
+                  className="flex flex-col gap-5"
+                >
+                  <div>
+                    <div className="text-[11.5px] font-semibold uppercase tracking-[0.12em] text-soft">Welcome back</div>
+                    <h2 className="mt-2 text-[26px] font-bold tracking-[-0.035em]">Continue as</h2>
+                    <p className="mt-1.5 break-all text-[16px] font-semibold">{existing}</p>
+                    <p className="mt-1.5 text-[14.5px] text-muted">You’re still signed in on this browser, so no code is needed.</p>
+                  </div>
+                  {error && <p className="text-[13.5px] font-medium text-pink-deep" role="alert">{error}</p>}
+                  <Button size="lg" disabled={busy} onClick={() => void submitCode("", existing)}>
+                    Continue
+                  </Button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="text-[13.5px] font-semibold text-muted underline underline-offset-4 hover:text-blue"
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await handlers.forgetExisting?.();
+                      } finally {
+                        setDifferentEmail(true);
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    Use a different email
+                  </button>
+                </motion.div>
+              )}
+              {step === "email" && !existing && (
                 <motion.form
                   key="email"
                   onSubmit={onEmail}

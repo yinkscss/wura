@@ -1,4 +1,5 @@
 import { ChatApprovalsCard } from "@/components/chat-approvals";
+import { ConnectedAppsCard } from "@/components/connected-apps";
 import { Card } from "@/components/ui";
 import { TelegramCard } from "@/components/telegram-card";
 import { ConnectedApps, PageHeader } from "@/components/wallet-parts";
@@ -18,6 +19,7 @@ export default function ChannelsPage() {
           <p>Each channel uses the same wallet, the same limits and the same approval step. A chat app only gets a key that’s capped to your limits, and it can’t move money without your yes.</p>
         </Card>
       </div>
+      <ConnectedAppsCard />
       <TelegramCard />
       <ChatApprovalsCard />
     </div>
