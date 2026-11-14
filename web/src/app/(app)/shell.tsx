@@ -4,17 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import {
-  ChatIcon,
-  ClockIcon,
-  CloseIcon,
-  GaugeIcon,
-  GearIcon,
-  GlobeIcon,
-  GridIcon,
-  HomeIcon,
-  MenuIcon,
-} from "@/components/icons";
+import { ChatIcon, ClockIcon, CloseIcon, GaugeIcon, GearIcon, GlobeIcon, GridIcon, HomeIcon, MenuIcon, StarIcon } from "@/components/icons";
 import { OverviewProvider, useOverview } from "@/components/overview";
 import { Starfield } from "@/components/starfield";
 import { Wordmark, cx } from "@/components/ui";
@@ -23,6 +13,7 @@ const NAV = [
   { href: "/wallet", label: "Overview", icon: HomeIcon },
   { href: "/chat", label: "Chat", icon: ChatIcon },
   { href: "/activity", label: "Activity", icon: ClockIcon },
+  { href: "/favourites", label: "Favourites", icon: StarIcon },
   { href: "/limits", label: "Limits", icon: GaugeIcon },
   { href: "/channels", label: "Channels", icon: GridIcon },
   { href: "/settings/sites", label: "Sites", icon: GlobeIcon },
