@@ -1,9 +1,12 @@
 "use client";
 
 import { motion } from "motion/react";
+import { useState } from "react";
 import type { Activity } from "@/lib/types";
 import { when } from "@/lib/format";
-import { ChatIcon } from "./icons";
+import { ChatGPTLogo, ClaudeLogo, TelegramLogo, WhatsAppLogo } from "./brand-icons";
+import { RefreshIcon } from "./icons";
+import { useOverview } from "./overview";
 import { Card, Pill, cx } from "./ui";
 
 const KIND_LABEL: Record<Activity["kind"], string> = { swap: "Swap", send: "Send", link: "Link", fund: "Fund", site: "Site" };
@@ -70,20 +73,20 @@ export function ActivityTable({ rows, limit }: { rows: Activity[]; limit?: numbe
 }
 
 const APPS = [
-  { name: "Claude", kind: "Same assistant · chat plugin", tile: "bg-blue text-white" },
-  { name: "ChatGPT", kind: "Same assistant · chat plugin", tile: "bg-pink text-white" },
-  { name: "Telegram", kind: "Same assistant · bot", tile: "bg-blue-mid text-white" },
-  { name: "WhatsApp", kind: "Same assistant · bot", tile: "bg-blue-night text-white" },
+  { name: "Claude", kind: "Same assistant · chat plugin", tile: "bg-[#D97757] text-white", Logo: ClaudeLogo },
+  { name: "ChatGPT", kind: "Same assistant · chat plugin", tile: "bg-[#10A37F] text-white", Logo: ChatGPTLogo },
+  { name: "Telegram", kind: "Same assistant · bot", tile: "bg-[#26A5E4] text-white", Logo: TelegramLogo },
+  { name: "WhatsApp", kind: "Same assistant · bot", tile: "bg-[#25D366] text-white", Logo: WhatsAppLogo },
 ];
 
-/** Labels and generic icons only. None of these channels are connected in v1. */
+/** Brand marks label each app. None of these channels are connected in v1. */
 export function ConnectedApps({ big = false }: { big?: boolean }) {
   return (
     <div className="flex flex-col gap-3">
       {APPS.map((a) => (
         <div key={a.name} className={cx("flex items-center gap-4 rounded-2xl bg-mist", big ? "p-4" : "px-3.5 py-3")}>
           <span className={cx("grid size-11 shrink-0 place-items-center rounded-xl", a.tile)}>
-            <ChatIcon size={18} />
+            <a.Logo size={22} />
           </span>
           <div className="min-w-0 flex-1">
             <div className="text-[15.5px] font-bold tracking-[-0.02em]">{a.name}</div>
@@ -112,10 +115,39 @@ export function PageHeader({ title, sub, actions }: { title: string; sub?: strin
   );
 }
 
-export function StatCard({ label, children, foot, className }: { label: string; children: React.ReactNode; foot?: React.ReactNode; className?: string }) {
+/** Re-fetches the wallet overview; the icon spins until the new numbers arrive. */
+export function RefreshButton({ label = "Refresh balance" }: { label?: string }) {
+  const { refresh } = useOverview();
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true);
+    try {
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={go}
+      disabled={busy}
+      aria-label={label}
+      title={label}
+      className="grid size-8 place-items-center rounded-full text-soft transition hover:bg-mist hover:text-blue disabled:cursor-wait"
+    >
+      <RefreshIcon size={17} className={busy ? "animate-spin" : undefined} />
+    </button>
+  );
+}
+
+export function StatCard({ label, children, foot, className, refreshable }: { label: string; children: React.ReactNode; foot?: React.ReactNode; className?: string; refreshable?: boolean }) {
   return (
     <Card className={cx("flex min-h-[210px] flex-col p-6 shadow-soft", className)}>
-      <div className="text-[12.5px] font-semibold uppercase tracking-[0.1em] text-soft">{label}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[12.5px] font-semibold uppercase tracking-[0.1em] text-soft">{label}</div>
+        {refreshable && <RefreshButton />}
+      </div>
       <div className="mt-3">{children}</div>
       {foot && <div className="mt-auto pt-6 text-[14px] text-muted">{foot}</div>}
     </Card>
