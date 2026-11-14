@@ -1,6 +1,9 @@
 import "server-only";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 import { config } from "./config";
+import type { TransactionSql } from "postgres";
+import { dbEnabled, ensureSchema, sql } from "./db";
 import type {
   Activity,
   AllowedSite,
@@ -14,11 +17,16 @@ import type {
 } from "@/lib/types";
 
 /**
- * In-memory wallet state for mock mode, one record per signed-in user.
+ * Wallet state, one record per signed-in user.
  *
- * This is preview data only. It lives in the server process, so it resets on
- * redeploy, and on Vercel separate serverless instances can each hold their
- * own copy. Swap this module for a database before anything real runs.
+ * With DATABASE_URL: stored in Postgres. Every API request runs inside
+ * withWallet(), which locks the user's row (SELECT … FOR UPDATE), loads the
+ * state, runs the handler and saves it in one transaction. That serialises a
+ * user's requests, so two payments at once can't both slip under the daily
+ * cap. The transaction log is its own append-only table.
+ *
+ * Without DATABASE_URL: kept in server memory (mock/demo only). It resets on
+ * redeploy, and on Vercel separate instances can each hold their own copy.
  */
 
 export type Contact = { name: string; address: string };
@@ -135,12 +143,10 @@ function seed(): WalletState {
   };
 }
 
-export function wallet(userId: string): WalletState {
-  let w = store.get(userId);
-  if (!w) {
-    w = config.moneyMode === "testnet" ? seedTestnet() : seed();
-    store.set(userId, w);
-  }
+type Ctx = { userId: string; w: WalletState };
+const als = new AsyncLocalStorage<Ctx>();
+
+function rollDay(w: WalletState) {
   const today = lagosDay();
   if (w.spentDay !== today) {
     w.spentDay = today;
@@ -149,6 +155,143 @@ export function wallet(userId: string): WalletState {
   return w;
 }
 
+function freshWallet() {
+  return config.moneyMode === "testnet" ? seedTestnet() : seed();
+}
+
+/** The signed-in user's wallet state for this request. */
+export function wallet(userId: string): WalletState {
+  const ctx = als.getStore();
+  if (ctx && ctx.userId === userId) return rollDay(ctx.w);
+  if (dbEnabled()) {
+    throw new Error("wallet() was called outside withWallet(); wrap the handler in authed().");
+  }
+  let w = store.get(userId);
+  if (!w) {
+    w = freshWallet();
+    store.set(userId, w);
+  }
+  return rollDay(w);
+}
+
 export function resetWallet(userId: string) {
   store.delete(userId);
+}
+
+// ---------- Postgres persistence ----------
+
+type Stored = Omit<WalletState, "activity" | "pendingTx" | "quotes" | "sends" | "siteRequests" | "siteActions"> & {
+  pendingTx: Array<[string, PendingTx]>;
+  quotes: Array<[string, Quote]>;
+  sends: Array<[string, SendIntent]>;
+  siteRequests: Array<[string, SiteConnectRequest]>;
+  siteActions: Array<[string, SiteAction]>;
+};
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/** Keep pending items; drop finished ones once they're a couple of days old. */
+function prune<T extends { status: string }>(m: Map<string, T>, when: (v: T) => number) {
+  const cutoff = Date.now() - 2 * DAY;
+  return [...m.entries()].filter(([, v]) => v.status === "pending" || when(v) > cutoff);
+}
+
+function serialize(w: WalletState): Stored {
+  return {
+    balances: w.balances,
+    spentDay: w.spentDay,
+    spentToday: w.spentToday,
+    links: w.links,
+    contacts: w.contacts,
+    kycStatus: w.kycStatus,
+    allowList: w.allowList,
+    pendingTx: prune(w.pendingTx, (v) => v.expiresAt),
+    quotes: prune(w.quotes, (v) => v.expiresAt),
+    sends: prune(w.sends, (v) => v.expiresAt),
+    siteRequests: prune(w.siteRequests, (v) => v.createdAt),
+    siteActions: prune(w.siteActions, (v) => v.expiresAt),
+  };
+}
+
+function deserialize(s: Stored, activity: Activity[]): WalletState {
+  return {
+    ...s,
+    activity,
+    pendingTx: new Map(s.pendingTx ?? []),
+    quotes: new Map(s.quotes ?? []),
+    sends: new Map(s.sends ?? []),
+    siteRequests: new Map(s.siteRequests ?? []),
+    siteActions: new Map(s.siteActions ?? []),
+    allowList: s.allowList ?? [],
+    links: s.links ?? [],
+    contacts: s.contacts ?? [],
+  };
+}
+
+type ActivityRow = {
+  id: string;
+  at: Date;
+  kind: Activity["kind"];
+  detail: string;
+  amount: string;
+  status: Activity["status"];
+  tx_ref: string | null;
+  explorer_url: string | null;
+};
+
+/**
+ * Runs fn with the user's wallet loaded and locked, then saves it. State is
+ * saved even when fn throws (e.g. a quote marked expired before refusing),
+ * matching the in-memory behaviour, and the error is re-thrown after commit.
+ */
+export async function withWallet<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  if (!dbEnabled()) return fn();
+  await ensureSchema();
+  let outcome: { ok: true; value: T } | { ok: false; error: unknown } | undefined;
+  await sql().begin(async (tx) => {
+    const fresh = freshWallet();
+    const inserted = await tx`
+      insert into wallets (user_id, state) values (${userId}, ${tx.json(serialize(fresh) as never)})
+      on conflict (user_id) do nothing
+      returning user_id`;
+    if (inserted.length) {
+      // New user: write their starting log entries (example rows in mock mode).
+      for (const a of fresh.activity) await insertActivity(tx, userId, a);
+    }
+    const [row] = await tx`select state from wallets where user_id = ${userId} for update`;
+    const rows = await tx<ActivityRow[]>`
+      select id, at, kind, detail, amount, status, tx_ref, explorer_url
+      from activity where user_id = ${userId} order by at desc limit 200`;
+    const activity: Activity[] = rows.map((r) => ({
+      id: r.id,
+      at: new Date(r.at).getTime(),
+      kind: r.kind,
+      detail: r.detail,
+      amount: r.amount,
+      status: r.status,
+      txRef: r.tx_ref ?? undefined,
+      explorerUrl: r.explorer_url ?? undefined,
+    }));
+    const known = new Set(activity.map((a) => a.id));
+    const w = deserialize(row.state as Stored, activity);
+
+    try {
+      outcome = { ok: true, value: await als.run({ userId, w }, fn) };
+    } catch (error) {
+      outcome = { ok: false, error };
+    }
+
+    await tx`update wallets set state = ${tx.json(serialize(w) as never)}, version = version + 1, updated_at = now() where user_id = ${userId}`;
+    for (const a of w.activity) if (!known.has(a.id)) await insertActivity(tx, userId, a);
+  });
+  if (!outcome) throw new Error("wallet transaction did not run");
+  if (!outcome.ok) throw outcome.error;
+  return outcome.value;
+}
+
+async function insertActivity(tx: TransactionSql, userId: string, a: Activity) {
+  await tx`
+    insert into activity (id, user_id, at, kind, detail, amount, status, tx_ref, explorer_url)
+    values (${a.id}, ${userId}, ${new Date(a.at)}, ${a.kind}, ${a.detail}, ${a.amount}, ${a.status}, ${a.txRef ?? null}, ${a.explorerUrl ?? null})
+    on conflict (id) do nothing`;
 }

@@ -2,6 +2,7 @@ import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { errorResponse, ApiFailure } from "./errors";
 import { getSession, type Session } from "./session";
+import { withWallet } from "./store";
 
 /** Wraps a route handler: requires a session and turns ApiFailure into JSON errors. */
 export function authed<T>(fn: (s: Session, req: NextRequest) => Promise<T> | T) {
@@ -9,7 +10,8 @@ export function authed<T>(fn: (s: Session, req: NextRequest) => Promise<T> | T) 
     try {
       const s = await getSession(req);
       if (!s) throw new ApiFailure("UNAUTHENTICATED", "Please sign in.", 401);
-      const data = await fn(s, req);
+      // One locked, saved wallet transaction per request (Postgres), or memory.
+      const data = await withWallet(s.userId, async () => fn(s, req));
       return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
     } catch (err) {
       return errorResponse(err);

@@ -65,14 +65,25 @@ npm run testnet -- contacts Tunde Ada   # prints TESTNET_CONTACTS=…  (real tes
 
 Put both lines in `.env.local`, plus `MONEY_MODE=testnet`, `TESTNET_SIGNER=server-dev` and a 32+ character `SESSION_SECRET`. Sign in, click **Set up testnet wallet**, then mint test USDC to your address with `npm run testnet -- mint <address> 50`. Secrets for the helper accounts are saved in `web/.testnet/` (git-ignored). Testnet resets wipe all of this; rerun the commands if that happens.
 
+## Database
+
+Set `DATABASE_URL` to a Postgres connection string and Wura stores everything there. Without it, state lives in server memory: fine for mock-mode demos, but it resets on restart, and Vercel's separate instances don't share it.
+
+- **Tables** (created automatically on first use, see `src/server/db.ts`):
+  - `wallets`: one row per user, holding balances in mock mode, spend counters, pending quotes and previews, transactions waiting for a signature, contacts, payment links, the allow list and the identity-check status (never the NIN)
+  - `activity`: the append-only transaction log
+- **One transaction per request.** Every API request locks the user's row (`SELECT … FOR UPDATE`), runs, and saves. A user's requests therefore run one at a time across all instances, so simultaneous payments can't slip past the daily cap. In a test, five $45 sends fired at once across two instances let exactly four through, and refused the fifth at the cap.
+- **Local Postgres:** `DATABASE_URL=postgres://user@127.0.0.1:5432/wura npm run dev`.
+
 ## Deploy to Vercel
 
 1. Import the repository in Vercel.
 2. Set **Root Directory** to `web`. The framework is detected as Next.js.
-3. Optionally add the variables from `.env.example`. With none set, the deploy runs in mock mode.
-4. Deploy.
+3. Add Postgres: in the Vercel project, **Storage → Marketplace → Neon**. It sets `DATABASE_URL` for you. Use the pooled connection string.
+4. Optionally add the other variables from `.env.example`. With none set, the deploy runs in mock mode.
+5. Deploy.
 
-Note: mock wallet state lives in server memory, so on Vercel it can reset between requests that land on different instances. That's fine for a preview. Swap `src/server/store.ts` for a database before anything real runs.
+Without a database, mock wallet state lives in server memory and can reset between requests that land on different Vercel instances. That's fine for a quick preview, not for a demo people use.
 
 ## How it's built
 
