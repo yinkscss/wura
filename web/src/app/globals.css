@@ -94,6 +94,11 @@ body {
   outline-offset: 2px;
 }
 
+/* The chat box shows its caret; no outline there. */
+#chat-input:focus-visible {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after {
