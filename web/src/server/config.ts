@@ -60,14 +60,9 @@ export const config = {
   quoteTtlMs: 60_000,
   /** How long a built transaction waits for the user's signature. */
   signTtlMs: 120_000,
-  /**
-   * Chat brain. "claude" (default when ANTHROPIC_API_KEY is set) reads the
-   * message with Claude and calls the same preview-only money functions.
-   * "rules" is the small built-in parser, also used if Claude can't answer.
-   */
-  get agentBrain(): "claude" | "rules" {
-    if (process.env.AGENT_BRAIN === "rules") return "rules";
-    return process.env.ANTHROPIC_API_KEY ? "claude" : "rules";
+  /** The chat model, or null to use the built-in rule parser. See llmConfig(). */
+  get llm(): LlmConfig | null {
+    return llmConfig();
   },
 };
 
@@ -97,4 +92,40 @@ export function sessionSecret(): Uint8Array {
     );
   }
   return new TextEncoder().encode(DEV_SECRET);
+}
+
+/**
+ * Chat model settings. You choose the provider and model; nothing is picked
+ * for you. All three of LLM_PROVIDER, LLM_MODEL and LLM_API_KEY must be set,
+ * otherwise (or with AGENT_BRAIN=rules) the built-in rule parser answers.
+ *
+ * - LLM_PROVIDER: "anthropic", "openai-compatible", or a preset that fills in
+ *   the base URL for an OpenAI-compatible API (openai, deepseek, openrouter,
+ *   gemini, groq).
+ * - LLM_BASE_URL: required for "openai-compatible"; overrides a preset.
+ * - LLM_REASONING_EFFORT: optional, sent only if set (Anthropic `effort`,
+ *   OpenAI-style `reasoning_effort`). Leave empty if your model doesn't take it.
+ */
+export type LlmConfig = { provider: string; model: string; apiKey: string; baseUrl: string; effort: string };
+
+const PRESET_BASE_URLS: Record<string, string> = {
+  openai: "https://api.openai.com/v1",
+  deepseek: "https://api.deepseek.com",
+  openrouter: "https://openrouter.ai/api/v1",
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
+  groq: "https://api.groq.com/openai/v1",
+};
+
+function llmConfig(): LlmConfig | null {
+  if (process.env.AGENT_BRAIN === "rules") return null;
+  const provider = (process.env.LLM_PROVIDER || "").trim().toLowerCase();
+  const model = (process.env.LLM_MODEL || "").trim();
+  const apiKey = (process.env.LLM_API_KEY || "").trim();
+  if (!provider || !model || !apiKey) return null;
+  const baseUrl = (process.env.LLM_BASE_URL || "").trim() || PRESET_BASE_URLS[provider] || "";
+  if (provider !== "anthropic" && !baseUrl) {
+    console.error(`LLM_PROVIDER=${provider} needs LLM_BASE_URL. Using the rule parser.`);
+    return null;
+  }
+  return { provider, model, apiKey, baseUrl, effort: (process.env.LLM_REASONING_EFFORT || "").trim() };
 }

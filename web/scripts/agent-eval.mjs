@@ -3,12 +3,12 @@
  * Checks the chat brain against fixed prompts. Run it against a local server
  * in mock mode (mock sign-in, example balances, contacts Tunde and Ada):
  *
- *   MONEY_MODE=mock npm run start            # with ANTHROPIC_API_KEY set
+ *   MONEY_MODE=mock npm run start   # with LLM_PROVIDER, LLM_MODEL, LLM_API_KEY set
  *   npm run agent-eval -- http://localhost:3000
  *
  * For each prompt it checks the card type, and that nothing was approved:
  * the activity log must not grow, because only the Approve buttons move money.
- * Each run makes real Claude calls (about 10 messages).
+ * Each run makes real calls to the configured model (about 10 messages).
  */
 
 const base = (process.argv[2] || "http://localhost:3000").replace(/\/$/, "");

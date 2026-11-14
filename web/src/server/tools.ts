@@ -1,8 +1,8 @@
 import "server-only";
-import type Anthropic from "@anthropic-ai/sdk";
 import type { AgentCard, Currency, Quote } from "@/lib/types";
 import { money, naira, rate, usdc } from "@/lib/format";
 import { config } from "./config";
+import type { ToolSpec } from "./llm";
 import { ApiFailure } from "./errors";
 import { createPaymentLink, getBalances, getLimits, getQuote, precheckSwap, previewSend } from "./money";
 import { marketNote } from "./rules";
@@ -21,18 +21,13 @@ import { withWallet } from "./store";
  * TOOLS and runTool as they are.
  */
 
-type Schema = Anthropic.Beta.BetaTool["input_schema"];
-
-function tool(name: string, description: string, properties: Schema["properties"], required: string[]): Anthropic.Beta.BetaTool {
-  return {
-    name,
-    description,
-    strict: true,
-    input_schema: { type: "object", properties, required, additionalProperties: false },
-  };
+// Portable schema subset (type, properties, required, enum, description) so any
+// provider accepts it. Inputs are still checked in code below.
+function tool(name: string, description: string, properties: Record<string, unknown>, required: string[]): ToolSpec {
+  return { name, description, parameters: { type: "object", properties, required } };
 }
 
-export const TOOLS: Anthropic.Beta.BetaTool[] = [
+export const TOOLS: ToolSpec[] = [
   tool(
     "get_rates",
     "Compare live naira → USDC rates across Stellar venues for an amount of naira. Use for questions about rates or prices. Shows a rate comparison card.",

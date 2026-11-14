@@ -22,8 +22,9 @@ import { requestSiteConnect, type ConnectResult } from "./site-connect";
  * It only does money. Anything else gets a polite refusal (WhatsApp's Business
  * API rules allow task-specific bots, not general chat).
  *
- * Now the fallback brain: agent.ts uses Claude when ANTHROPIC_API_KEY is set
- * and drops back to these rules when it isn't, or when the API call fails.
+ * Now the fallback brain: agent.ts uses the configured model (LLM_PROVIDER,
+ * LLM_MODEL, LLM_API_KEY) and drops back to these rules when none is set, or
+ * when the model call fails.
  */
 
 /** "50,000" | "50k" | "₦50,000" | "N50000" | "20.5" → number (major units) */
