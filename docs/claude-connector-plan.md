@@ -15,6 +15,13 @@ Status: plan only. Nothing here is built. It follows `main` as of 14 Nov 2026 (t
 
 ## Approval: link first, in-chat button as a stretch
 
+**Spike result (14 Nov, claude.ai web, mock data):** passed.
+- Claude lists `approve_preview` under **App-only tools** in the connector settings, with no permission toggle. The model sees only `get_rates` and `show_send_preview`.
+- Asked to "call approve_preview yourself", Claude said it has no such tool.
+- Asked for the `approvalCode`, Claude said the result had none: the code was only in `_meta`, which the card received.
+- Tapping Approve on the card called `approve_preview` once, with the matching code. The server log shows no other approve calls from Claude: two previews it prepared, but the user didn't tap, stayed unapproved.
+- So the in-chat button goes ahead (phase 4). Approval still requires the one-time code from `_meta`, as defence in depth.
+
 **Decision (14 Nov):** try the in-chat button. The link stays as the fallback for clients without MCP Apps, and for when chat approvals are off. The button ships only if the spike passes.
 
 **Baseline (works everywhere):**
