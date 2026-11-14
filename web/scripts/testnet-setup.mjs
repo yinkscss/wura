@@ -49,8 +49,10 @@ async function submitOps(kp, ops) {
   return res.hash;
 }
 
+// Circle's testnet USDC unless STELLAR_USDC_ISSUER says otherwise
+// (set it to your private test issuer from `test-usdc` for offline testing).
 function usdcIssuer() {
-  return process.env.STELLAR_USDC_ISSUER || load("issuer.json")?.public || CIRCLE_TESTNET_USDC;
+  return process.env.STELLAR_USDC_ISSUER || CIRCLE_TESTNET_USDC;
 }
 
 const [cmd, ...args] = process.argv.slice(2);
