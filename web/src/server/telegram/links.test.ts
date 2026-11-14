@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addToHistory, allowMessage, consumeLinkCode, createLinkCode, firstSight, getHistory, isLinked, linkedUserId, unlinkUser } from "./links";
+import { addToHistory, allowMessage, consumeLinkCode, createLinkCode, firstSight, getHistory, isLinked, linkedAccount, linkedUserId, unlinkUser } from "./links";
 
 // No DATABASE_URL here, so these run against the in-memory store.
 delete process.env.DATABASE_URL;
@@ -72,4 +72,17 @@ test("a repeated update_id is only handled once", async () => {
   assert.equal(await firstSight(9001), true);
   assert.equal(await firstSight(9001), false);
   assert.equal(await firstSight(9002), true);
+});
+
+test("the linked Telegram handle is shown, and falls back to the name", async () => {
+  const a = await createLinkCode("user-who-a");
+  await consumeLinkCode(a.code, 9001, { username: "isaac_dev", name: "Isaac" });
+  assert.deepEqual(await linkedAccount("user-who-a"), { label: "@isaac_dev" });
+  const b = await createLinkCode("user-who-b");
+  await consumeLinkCode(b.code, 9002, { name: "Ada O" });
+  assert.deepEqual(await linkedAccount("user-who-b"), { label: "Ada O" });
+  const c = await createLinkCode("user-who-c");
+  await consumeLinkCode(c.code, 9003);
+  assert.deepEqual(await linkedAccount("user-who-c"), { label: "a Telegram account" });
+  assert.equal(await linkedAccount("nobody"), null);
 });

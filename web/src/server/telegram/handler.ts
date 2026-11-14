@@ -21,7 +21,7 @@ import { parseButton, renderCard, renderReply } from "./render";
  * per tool call); only the button handlers lock around their one call.
  */
 
-export type TgUser = { id: number };
+export type TgUser = { id: number; username?: string; first_name?: string; last_name?: string };
 export type TgMessage = { message_id: number; chat: { id: number; type: string }; from?: TgUser; text?: string };
 export type TgCallbackQuery = { id: string; from: TgUser; message?: TgMessage; data?: string };
 export type TgUpdate = { update_id: number; message?: TgMessage; callback_query?: TgCallbackQuery };
@@ -76,7 +76,9 @@ async function onMessage(m: TgMessage) {
   if (command === "/start") {
     const code = text.split(/\s+/)[1];
     if (code) {
-      const userId = await consumeLinkCode(code, tgId);
+      const who = m.from;
+      const name = [who.first_name, who.last_name].filter(Boolean).join(" ");
+      const userId = await consumeLinkCode(code, tgId, { username: who.username, name });
       if (!userId) {
         await sendMessage(chatId, "That link expired or was already used. Make a new one on the Channels page in Wura.");
         return;

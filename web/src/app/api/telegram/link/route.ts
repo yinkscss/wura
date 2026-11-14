@@ -1,15 +1,19 @@
 import { config } from "@/server/config";
 import { ApiFailure } from "@/server/errors";
 import { authed } from "@/server/route";
-import { createLinkCode, isLinked, unlinkUser } from "@/server/telegram/links";
+import { createLinkCode, linkedAccount, unlinkUser } from "@/server/telegram/links";
 import { recordUser } from "@/server/users";
 
 /** Telegram connection status for the signed-in user. */
-export const GET = authed(async (s) => ({
-  enabled: config.telegram.enabled,
-  linked: config.telegram.enabled ? await isLinked(s.userId) : false,
-  botUsername: config.telegram.enabled ? config.telegram.botUsername : null,
-}));
+export const GET = authed(async (s) => {
+  const account = config.telegram.enabled ? await linkedAccount(s.userId) : null;
+  return {
+    enabled: config.telegram.enabled,
+    linked: account !== null,
+    account: account?.label ?? null,
+    botUsername: config.telegram.enabled ? config.telegram.botUsername : null,
+  };
+});
 
 /** Makes a single-use, 10-minute link for t.me/<bot>?start=<code>. */
 export const POST = authed(async (s) => {

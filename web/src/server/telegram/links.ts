@@ -8,9 +8,17 @@ import { dbEnabled, ensureSchema, sql } from "../db";
  *
  * Postgres when DATABASE_URL is set (so the rate limit and history hold across
  * serverless instances). Without it, in-memory maps (demo only), like store.ts.
- * Only user_id is stored against a Telegram id; email and address are read from
- * `users` when a Session is built, so they can't go stale.
+ * Against a Telegram id we store the user_id, the Telegram handle (shown on the
+ * Channels card) and the last few chat lines. Email and address are read from
+ * `users` when a Session is built, so they can't go stale. Chat history can
+ * include amounts, names and addresses; unlinking deletes it.
  */
+
+/** Who linked, from Telegram's `from` field. Shown to the user on the web. */
+export type TelegramWho = { username?: string; name?: string };
+
+const clean = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
+
 
 export type HistoryLine = { role: "user" | "agent"; text: string };
 
@@ -19,7 +27,7 @@ export const RATE_LIMIT_PER_MINUTE = 20;
 const HISTORY_KEEP = 8;
 
 type Mem = {
-  links: Map<number, { userId: string; history: HistoryLine[] }>;
+  links: Map<number, { userId: string; history: HistoryLine[]; who: TelegramWho }>;
   codes: Map<string, { userId: string; expiresAt: number }>;
   rate: Map<string, number>;
   updates: Map<number, number>;
@@ -51,14 +59,16 @@ export async function createLinkCode(userId: string): Promise<{ code: string; ex
  * expired or already used. Then links that user to this Telegram account,
  * replacing any earlier link for either side.
  */
-export async function consumeLinkCode(code: string, telegramUserId: number): Promise<string | null> {
+export async function consumeLinkCode(code: string, telegramUserId: number, who: TelegramWho = {}): Promise<string | null> {
   const key = hash(code);
+  const username = clean(who.username, 64);
+  const name = clean(who.name, 128);
   if (!dbEnabled()) {
     const c = mem.codes.get(key);
     mem.codes.delete(key);
     if (!c || c.expiresAt < Date.now()) return null;
     for (const [tid, l] of mem.links) if (l.userId === c.userId) mem.links.delete(tid);
-    mem.links.set(telegramUserId, { userId: c.userId, history: [] });
+    mem.links.set(telegramUserId, { userId: c.userId, history: [], who: { username, name } });
     return c.userId;
   }
   await ensureSchema();
@@ -68,7 +78,8 @@ export async function consumeLinkCode(code: string, telegramUserId: number): Pro
       delete from telegram_link_codes where code_hash = ${key} and expires_at > now() returning user_id`;
     if (!row) return null;
     await tx`delete from telegram_links where user_id = ${row.user_id} or telegram_user_id = ${telegramUserId}`;
-    await tx`insert into telegram_links (telegram_user_id, user_id) values (${telegramUserId}, ${row.user_id})`;
+    await tx`insert into telegram_links (telegram_user_id, user_id, tg_username, tg_name)
+      values (${telegramUserId}, ${row.user_id}, ${username ?? null}, ${name ?? null})`;
     return row.user_id;
   });
 }
@@ -81,10 +92,20 @@ export async function linkedUserId(telegramUserId: number): Promise<string | nul
 }
 
 export async function isLinked(userId: string): Promise<boolean> {
-  if (!dbEnabled()) return [...mem.links.values()].some((l) => l.userId === userId);
+  return (await linkedAccount(userId)) !== null;
+}
+
+/** The Telegram account linked to this user, or null. `label` is "@handle", a name, or "a Telegram account". */
+export async function linkedAccount(userId: string): Promise<{ label: string } | null> {
+  const label = (w: TelegramWho) => (w.username ? `@${w.username}` : w.name || "a Telegram account");
+  if (!dbEnabled()) {
+    const l = [...mem.links.values()].find((x) => x.userId === userId);
+    return l ? { label: label(l.who) } : null;
+  }
   await ensureSchema();
-  const rows = await sql()`select 1 from telegram_links where user_id = ${userId}`;
-  return rows.length > 0;
+  const [row] = await sql()<{ tg_username: string | null; tg_name: string | null }[]>`
+    select tg_username, tg_name from telegram_links where user_id = ${userId}`;
+  return row ? { label: label({ username: row.tg_username ?? undefined, name: row.tg_name ?? undefined }) } : null;
 }
 
 /** Deletes the link and its history. Returns whether anything was removed. */

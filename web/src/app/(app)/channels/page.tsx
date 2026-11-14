@@ -15,7 +15,7 @@ export default function ChannelsPage() {
         </Card>
         <Card className="flex flex-col gap-3 p-6 text-[14.5px] text-muted shadow-soft sm:p-7">
           <h2 className="text-[20px] font-bold tracking-[-0.03em] text-blue">What’s live</h2>
-          <p>This web app is the first channel. Telegram can be connected below once it’s set up on this server. Claude, ChatGPT and WhatsApp aren’t connected yet.</p>
+          <p>This web app and Claude are live. Telegram can be connected below once it’s set up on this server. ChatGPT and WhatsApp aren’t connected yet.</p>
           <p>Each channel uses the same wallet, the same limits and the same approval step. A chat app only gets a key that’s capped to your limits, and it can’t move money without your yes.</p>
         </Card>
       </div>
