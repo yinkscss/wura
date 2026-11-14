@@ -8,7 +8,7 @@ import { when } from "@/lib/format";
 import { ChatGPTLogo, ClaudeLogo, TelegramLogo, WhatsAppLogo } from "./brand-icons";
 import { RefreshIcon } from "./icons";
 import { useOverview } from "./overview";
-import { Card, Pill, cx } from "./ui";
+import { buttonClass, Card, Pill, cx } from "./ui";
 
 const KIND_LABEL: Record<Activity["kind"], string> = { swap: "Swap", send: "Send", link: "Link", fund: "Fund", site: "Site" };
 
@@ -74,21 +74,54 @@ export function ActivityTable({ rows, limit }: { rows: Activity[]; limit?: numbe
 }
 
 const APPS = [
-  { name: "Claude", kind: "Connector · balance, rates, favourites", tile: "bg-[#D97757] text-white", Logo: ClaudeLogo, live: true },
+  { name: "Claude", kind: "Same assistant · connector", tile: "bg-[#D97757] text-white", Logo: ClaudeLogo },
   { name: "ChatGPT", kind: "Same assistant · chat plugin", tile: "bg-[#10A37F] text-white", Logo: ChatGPTLogo },
   { name: "Telegram", kind: "Same assistant · bot", tile: "bg-[#26A5E4] text-white", Logo: TelegramLogo },
   { name: "WhatsApp", kind: "Same assistant · bot", tile: "bg-[#25D366] text-white", Logo: WhatsAppLogo },
 ];
 
-/** Brand marks label each app. Claude is live as a connector; Telegram shows "Live" when this server has the bot set up. */
+/** Opens Claude's "Add custom connector" dialog with Wura's name and URL filled in; the user confirms there. */
+function addToClaudeUrl(origin: string) {
+  return `https://claude.ai/customize/connectors?${new URLSearchParams({
+    modal: "add-custom-connector",
+    connectorName: "Wura",
+    connectorUrl: `${origin}/mcp`,
+  })}`;
+}
+
+/**
+ * Brand marks label each app. Claude shows "Add to Claude" until this user has
+ * connected it (an OAuth grant from claude.ai), then "Live". Telegram shows
+ * "Live" when this server has the bot set up.
+ */
 export function ConnectedApps({ big = false }: { big?: boolean }) {
   const [telegramOn, setTelegramOn] = useState(false);
+  const [claude, setClaude] = useState<{ connected: boolean; addUrl: string } | null>(null);
   useEffect(() => {
     api<{ enabled: boolean }>("/api/telegram/link")
       .then((s) => setTelegramOn(s.enabled))
       .catch(() => {});
+    api<{ name: string; redirectHost: string }[]>("/api/connected-apps")
+      .then((apps) => apps.some((a) => /claude/i.test(a.name) || /(^|\.)claude\.(ai|com)$/.test(a.redirectHost)))
+      .catch(() => false)
+      .then((connected) => setClaude({ connected, addUrl: addToClaudeUrl(window.location.origin) }));
   }, []);
-  const available = telegramOn ? ["Telegram"] : [];
+
+  function status(name: string) {
+    if (name === "Claude") {
+      if (!claude) return null;
+      return claude.connected ? (
+        <Pill tone="pink">Live</Pill>
+      ) : (
+        <a href={claude.addUrl} target="_blank" rel="noopener noreferrer" className={buttonClass("blue", "sm", "shrink-0")}>
+          Add to Claude
+        </a>
+      );
+    }
+    if (name === "Telegram" && telegramOn) return <Pill tone="pink">Live</Pill>;
+    return <Pill tone="blue">Soon</Pill>;
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {APPS.map((a) => (
@@ -100,7 +133,7 @@ export function ConnectedApps({ big = false }: { big?: boolean }) {
             <div className="text-[15.5px] font-bold tracking-[-0.02em]">{a.name}</div>
             <div className="truncate text-[13px] text-muted">{a.kind}</div>
           </div>
-          {("live" in a && a.live) || available.includes(a.name) ? <Pill tone="pink">Live</Pill> : <Pill tone="blue">Soon</Pill>}
+          {status(a.name)}
         </div>
       ))}
     </div>
