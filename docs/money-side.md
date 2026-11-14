@@ -2,7 +2,7 @@
 
 Who works on what in the money code, so two people do not edit the same files at the same time.
 
-**Status: proposed on 14 November 2026 by Samuel (OtowoSamuel). Not yet agreed with Olayinka (yinkscss).** The split below is a starting point. Change it in this file when the team agrees something different.
+**Status: agreed on 14 November 2026. Proposed by Samuel, confirmed by Olayinka.** Change it in this file when the team agrees something different.
 
 Nothing here is live. No naira partner has been contacted and no real money moves.
 
@@ -23,16 +23,16 @@ Everything else stays with Olayinka unless agreed here: the web app screens, lan
 | --- | --- | --- |
 | Naira partner and identity check | `web/src/server/paycrest.ts`, `web/src/app/api/funding/**`, new files under `web/src/server/ramp/` | Samuel |
 | Money docs | `docs/kyc-and-funding.md`, this file | Samuel |
-| Quotes and venue comparison | `web/src/server/routing.ts`, `docs/routing.md` | Olayinka (live quotes are his work on `live-quotes`) |
+| Quotes and venue comparison | `web/src/server/routing.ts`, `docs/routing.md` | Olayinka. The naira partner exposes a `quote()` and routing calls it as one more venue. |
 | Sends, swaps, limits, log | `web/src/server/money.ts`, `testnet.ts`, `signer.ts`, `stellar.ts` | Olayinka |
 | Screens and components | `web/src/app/**` except `api/funding`, `web/src/components/**` | Olayinka |
-| Auth, session, database | `privy.ts`, `session.ts`, `store.ts`, `db.ts`, `route.ts` | Olayinka |
+| Auth, session, database | `privy.ts`, `session.ts`, `store.ts`, `db.ts`, `web/src/server/route.ts` | Olayinka |
 
 **Shared files. Say so in the team chat before editing, and keep the change small:**
 
 - `web/src/lib/types.ts`
 - `web/src/server/config.ts`
-- `web/src/server/money.ts` (when the naira flow needs a new hook)
+- `web/src/server/money.ts` (Olayinka owns it; Samuel adds small hooks after a heads-up)
 - `web/.env.example`
 - `web/README.md` and the root `README.md`
 - `docs/open-questions.md`
@@ -54,7 +54,7 @@ Everything else stays with Olayinka unless agreed here: the web app screens, lan
 - `main` is at pull request #7: brand logos on Channels, refresh buttons on the balance cards, the Wura favicon.
 - **Live quotes (#5) and Postgres storage (#6) are not on `main`.** Both show as merged, but #5 merged into `testnet-signing` and #6 merged into `live-quotes`. The `persistence` branch holds all four commits. A test merge of `persistence` into `main` has no conflicts.
 - Because of that, `main` still has example prices in `routing.ts`, no `db.ts`, and a README that describes neither.
-- **Suggested first step, for Olayinka:** open one pull request from `persistence` into `main`. Money-side work should start after that lands, so it builds on live quotes and the database.
+- **Update, later on 14 November:** pull request #9 brought `persistence` into `main`. Money-side branches now start from live quotes and the database.
 
 ## Findings so far
 
@@ -75,7 +75,11 @@ Checked against live endpoints on 13 November 2026. Rates move; rerun before rel
 
 LINK fits best. Its hosted page means LINK collects the identity and bank details, so Wura never handles them. It works with the Privy `G…` wallet used today. It would not work with a `C…` smart wallet: LINK does not advertise SEP-45. That matters for the [wallet roadmap](wallet-roadmap.md).
 
-Not confirmed about LINK: its fees, how long deposits take, whether a real deposit completes today, and its licence status in Nigeria. Its 20,000 naira minimum deposit is above the smallest top-up the app allows now (1,000 naira).
+Not confirmed about LINK: its fees, how long deposits take, whether a real deposit completes today, and its licence status in Nigeria. Its config file gives a London address, so the question is which Nigerian entity holds the licence, and under which CBN licence. LINK's config file is mainnet only; no test environment is known.
+
+Its 20,000 naira minimum deposit is above the smallest top-up the app allows now (1,000 naira). When LINK is switched on, the top-up screen shows and enforces the partner's minimum, read from LINK's info endpoint and never hard-coded. The mock keeps 1,000 naira.
+
+Cowrie is registered in Lagos, which makes it a backup with a Nigerian entity. It would only fit if it offers a hosted identity page, because of the rule that Wura never handles NIN or BVN.
 
 **Naira to dollars on the open market loses money.** This matches what #5 found.
 
@@ -89,8 +93,8 @@ The other direction is fine at small sizes: 20 USDC bought 30,272 NGNC, about 1,
 
 ## Plan, in order
 
-1. **Ask LINK** (support address in its config file): test access, fees, timing, the identity fields it asks for, whether it can deliver USDC for naira directly, and its licence status. Samuel sends this. Not sent yet.
-2. **One manual test:** a 20,000 naira deposit and a 10,000 naira withdrawal through LINK in an ordinary Stellar wallet, timed. Real money, so only with the team's agreement.
+1. **Ask LINK** (support address in its config file): whether it has a testnet anchor, fees, timing, the identity fields it asks for, whether it can deliver USDC for naira directly, and which Nigerian entity holds which CBN licence. Samuel sends this. Not sent yet.
+2. **One manual test:** a 20,000 naira deposit and a 10,000 naira withdrawal through LINK in an ordinary Stellar wallet, timed. Real money, so only after both of us agree it in chat.
 3. **A partner interface** in `web/src/server/ramp/`: start a top-up, start a cash-out, read status, read the identity-check status. The current mock becomes the first implementation behind it, so the screens do not change.
 4. **A LINK implementation** behind an environment variable: SEP-10 sign-in signed by the user's wallet, open LINK's hosted page, poll until the transfer completes, write the result to the log.
 5. **Naira out** through the same interface.
@@ -98,9 +102,15 @@ The other direction is fine at small sizes: 20 USDC bought 30,272 NGNC, about 1,
 
 Steps 3 to 6 are for after the application goes in on 21 November. The demo keeps the mock.
 
-## Open questions
+## Build rules agreed in review
 
-- Is this split right? Olayinka to confirm or change.
-- Paycrest or LINK for the first live naira flow? This file recommends LINK. The concept and KYC docs still say Paycrest, and have not been changed.
-- Should `kycStatus` stay one flag, or become one status per partner?
-- Who owns `routing.ts` once naira quotes can come from a partner as well as from the market?
+- **Trustline first.** LINK delivers NGNC, so the user's wallet needs an NGNC trustline before a deposit can land. The trustline flow lives in `testnet.ts` (Olayinka's); he adds an asset parameter and the naira code calls it.
+- **A cash-out is a money move.** The naira partner code returns a preview only: amount, fee, bank, memo, expiry. It never signs. Signing goes through the same path as a send: `approve: true`, caps checked, signature, submit, log entry. The naira caps apply to cash-outs.
+- **Check the partner's sign-in challenge before the wallet signs it.** It must come from LINK's signing key in its config file, have sequence number 0, carry the right `manage_data` operation for the user's account, sit inside a valid time window and already hold the server's signature.
+- **Naira balance.** In live mode the dashboard shows the wallet's real NGNC balance from Horizon. That is `getBalances()` in `money.ts` (Olayinka's), wired to what the partner interface exposes.
+- **`kycStatus`** stays a single flag until a second partner arrives. Changing it touches `types.ts` and `store.ts`, so flag it first.
+
+## Decided
+
+- LINK is the first partner to pursue. Paycrest stays parked because it does not settle on Stellar. The concept and KYC docs still say Paycrest and have not been changed yet.
+- `routing.ts` stays with Olayinka.
