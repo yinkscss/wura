@@ -138,3 +138,6 @@ export const GlobeIcon = (p: P) => (
 export const TrashIcon = (p: P) => (
   <Svg {...p}><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 10a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L14 6" {...stroke} /></Svg>
 );
+export const StarIcon = (p: P) => (
+  <Svg {...p}><path d="M10 3.2l2.1 4.3 4.7.7-3.4 3.3.8 4.7L10 14l-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z" {...stroke} /></Svg>
+);

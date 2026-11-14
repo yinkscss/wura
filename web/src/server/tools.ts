@@ -4,7 +4,7 @@ import { money, naira, rate, usdc } from "@/lib/format";
 import { config } from "./config";
 import type { ToolSpec } from "./llm";
 import { ApiFailure } from "./errors";
-import { createPaymentLink, getBalances, getLimits, getQuote, precheckSwap, previewSend } from "./money";
+import { createPaymentLink, getBalances, getLimits, getQuote, listContacts, precheckSwap, previewSend, saveContact } from "./money";
 import { marketNote } from "./rules";
 import type { Session } from "./session";
 import { requestSiteConnect } from "./site-connect";
@@ -61,6 +61,16 @@ export const TOOLS: ToolSpec[] = [
     },
     ["amount", "currency"],
   ),
+  tool(
+    "save_contact",
+    "Save a Stellar address under a name in the user's favourites, so they can later say 'send $10 to Isaac'. Use only when the user asks to save or name someone. Saving an address again renames it.",
+    {
+      name: { type: "string", description: "The name to save, e.g. Isaac or Mum." },
+      address: { type: "string", description: "The full Stellar G… address, exactly as the user gave it." },
+    },
+    ["name", "address"],
+  ),
+  tool("list_contacts", "List the user's saved favourites (names and addresses).", {}, []),
   tool("get_balance", "Show the user's balances and how much they can still spend today under their limits.", {}, []),
   tool(
     "connect_site",
@@ -154,6 +164,17 @@ async function run(s: Session, name: string, input: Record<string, unknown>): Pr
         card: { type: "link", link },
       };
     }
+    case "save_contact": {
+      const c = saveContact(s, { name: input.name, address: input.address });
+      return { content: JSON.stringify({ saved: c.name, address: c.address }), isError: false };
+    }
+    case "list_contacts": {
+      const list = listContacts(s);
+      return {
+        content: JSON.stringify(list.length ? list.map((c) => ({ name: c.name, address: `${c.address.slice(0, 4)}…${c.address.slice(-4)}` })) : "No favourites saved yet."),
+        isError: false,
+      };
+    }
     case "get_balance": {
       const balances = await getBalances(s);
       const limits = getLimits(s);
@@ -204,7 +225,7 @@ export async function runTool(s: Session, name: string, input: unknown): Promise
     return await withWallet(s.userId, () => run(s, name, args));
   } catch (err) {
     if (err instanceof ApiFailure) {
-      const title = name === "preview_send" ? "Not sent" : name === "prepare_swap" ? "Not swapped" : name === "connect_site" ? "Not connected" : "Couldn't do that";
+      const title = name === "save_contact" ? "Not saved" : name === "preview_send" ? "Not sent" : name === "prepare_swap" ? "Not swapped" : name === "connect_site" ? "Not connected" : "Couldn't do that";
       return {
         content: JSON.stringify({ refused: err.code, message: err.message }),
         isError: true,

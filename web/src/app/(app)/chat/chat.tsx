@@ -12,6 +12,7 @@ import { api, ClientApiError } from "@/lib/api";
 import { naira, usdc, usdcNumber } from "@/lib/format";
 import type { AgentCard, AgentReply, NeedsSignature, Quote, SendIntent, SiteAction, SiteConnectRequest } from "@/lib/types";
 import { useCompleteSigning } from "@/lib/signing";
+import { SaveContactCard } from "@/components/save-contact";
 import { SiteActionCard, SitePermissionCard } from "@/components/site-cards";
 
 type Msg =
@@ -88,6 +89,17 @@ export function Chat() {
     [thinking, refresh, say, msgs],
   );
 
+  // Prefill without sending: /chat?draft=...
+  useEffect(() => {
+    const d = params.get("draft");
+    if (d) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setInput(d);
+      router.replace("/chat");
+      document.getElementById("chat-input")?.focus();
+    }
+  }, [params, router]);
+
   // Deep link: /chat?prompt=...
   useEffect(() => {
     const p = params.get("prompt");
@@ -134,6 +146,12 @@ export function Chat() {
         say(`Sent ${usdc(intent.amount)} to ${intent.to.name}. Reference ${res.activity.txRef} (mock — nothing was broadcast).`);
       } else {
         say(`Sent ${usdc(intent.amount)} to ${intent.to.name} on Stellar testnet.`, undefined, res.activity.explorerUrl);
+      }
+      if (intent.to.saved === false) {
+        say("Want to save this address? Then next time you can just say “send to” and their name.", {
+          type: "save-contact",
+          address: intent.to.address,
+        });
       }
       void refresh();
     } catch (e) {
@@ -448,6 +466,12 @@ function CardFor({
             onCancel={() => onCancel(card)}
             onRefresh={onRetry}
           />
+        </Card>
+      );
+    case "save-contact":
+      return (
+        <Card className={shell}>
+          <SaveContactCard address={card.address} />
         </Card>
       );
     case "refused":
