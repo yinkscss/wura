@@ -49,6 +49,15 @@ create table if not exists activity (
   explorer_url text
 );
 create index if not exists activity_user_at on activity (user_id, at desc);
+
+-- Who each user is, so channels without a browser cookie (Telegram, MCP)
+-- can rebuild a session from user_id. Written on every sign-in.
+create table if not exists users (
+  user_id    text primary key,
+  email      text not null,
+  address    text not null,
+  updated_at timestamptz not null default now()
+);
 `;
 
 /** Creates the tables once per process (idempotent). Also: npm run db:migrate. */
