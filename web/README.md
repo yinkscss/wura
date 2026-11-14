@@ -129,7 +129,8 @@ Otherwise the API returns an error, and nothing is signed. The caps are **exampl
   - any other example host: no contract found
 
   Real sites get a plain “I can only connect to the example sites in this preview”. There is no hosted browser.
-- **Chat** (`src/server/agent.ts`): a rule-based intent parser for the money commands. It only handles money questions. It returns quote and preview cards; it never moves money itself.
+- **Chat** (`src/server/agent.ts`): the model you configure reads each message and calls the tools in `src/server/tools.ts`: rates, swap quote, send preview, payment link, balance, site connect. Any provider works: set `LLM_PROVIDER`, `LLM_MODEL` and `LLM_API_KEY` (see `.env.example`). `src/server/llm.ts` has two adapters: Anthropic's Messages API, and any OpenAI-compatible Chat Completions API by base URL (presets for OpenAI, DeepSeek, OpenRouter, Gemini and Groq; or `openai-compatible` plus `LLM_BASE_URL` for anything else, including a local server). The model must support tool calling. Every tool only prepares or reads; none approves, confirms or submits, so money still moves only when the user taps Approve, and the server re-checks caps then. The card in each reply comes from a real tool result, never from model text. Each tool call takes its own wallet lock, so the model call never holds the user's row. The browser sends the last 8 chat lines as plain text for follow-ups. With no model configured, or if the call fails or declines, the rule parser in `src/server/rules.ts` answers instead (`AGENT_BRAIN=rules` forces it).
+- **Chat eval** (`npm run agent-eval -- <url>`): ten fixed prompts against a mock-mode server, checking card types and that the activity log never grows. Makes real calls to the configured model.
 
 Claude, ChatGPT, Telegram and WhatsApp appear only as "connected apps" labels, marked as not connected yet. They use generic icons, not their logos.
 

@@ -19,6 +19,24 @@ export function authed<T>(fn: (s: Session, req: NextRequest) => Promise<T> | T) 
   };
 }
 
+/**
+ * Like authed(), but without holding the wallet lock for the whole request.
+ * For handlers that do slow work (model calls) and lock the wallet themselves
+ * around each money step with withWallet().
+ */
+export function signedIn<T>(fn: (s: Session, req: NextRequest) => Promise<T> | T) {
+  return async (req: NextRequest) => {
+    try {
+      const s = await getSession(req);
+      if (!s) throw new ApiFailure("UNAUTHENTICATED", "Please sign in.", 401);
+      const data = await fn(s, req);
+      return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
+    } catch (err) {
+      return errorResponse(err);
+    }
+  };
+}
+
 export async function jsonBody(req: NextRequest): Promise<Record<string, unknown>> {
   try {
     const b = await req.json();

@@ -1,4 +1,4 @@
-import { connectReply } from "@/server/agent";
+import { connectReply } from "@/server/rules";
 import { respondToConnect } from "@/server/site-connect";
 import { authed, jsonBody } from "@/server/route";
 
