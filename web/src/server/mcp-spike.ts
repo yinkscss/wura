@@ -8,6 +8,7 @@ import { config } from "./config";
 import type { Session } from "./session";
 import { withWallet } from "./store";
 import { runTool } from "./tools";
+import { sendPreviewCardHtml, type CardPreview } from "./mcp-card";
 
 /**
  * SPIKE ONLY (docs/claude-connector-plan.md, phase 1). Answers one question:
@@ -44,52 +45,21 @@ export function spikeLogLines() {
   return [...spikeLog];
 }
 
-function cardHtml(baseUrl: string) {
-  return `<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  body{margin:0;font-family:"Plus Jakarta Sans",system-ui,sans-serif;color:#08318D;background:transparent}
-  .card{border-radius:20px;background:#fff;padding:20px;box-shadow:0 10px 30px rgba(8,49,141,.12)}
-  .k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7a8bb5;font-weight:600}
-  .amt{font-size:32px;font-weight:800;margin:6px 0 2px}.amt span{color:#FD91CC}
-  .row{display:flex;gap:10px;margin-top:16px}
-  button{flex:1;border:0;border-radius:999px;padding:12px 16px;font:inherit;font-weight:700;cursor:pointer}
-  .ok{background:#08318D;color:#fff}.no{background:#eef2fb;color:#08318D}
-  .msg{margin-top:12px;font-size:14px;color:#4a5a86}
-</style></head>
-<body><div class="card" id="card">
-  <div class="k">Wura · send preview · spike (mock)</div>
-  <div class="amt" id="amt">…</div>
-  <div id="to" class="msg"></div>
-  <div class="row"><button class="no" id="cancel">Cancel</button><button class="ok" id="approve" disabled>Approve</button></div>
-  <div class="msg" id="msg"></div>
-</div>
-<script type="module">
-  import { App } from "${baseUrl}/mcp-assets/app";
-  const app = new App({ name: "Wura send preview", version: "0.0.1" });
-  let pending = null;
-  const $ = (id) => document.getElementById(id);
-  app.ontoolresult = (result) => {
-    const s = result.structuredContent || {};
-    const m = result._meta || {};
-    pending = { intentId: s.intentId, approvalCode: m.approvalCode };
-    $("amt").innerHTML = (s.amount || "?") + ' <span>USDC</span>';
-    $("to").textContent = "to " + (s.to || "?") + " · nothing moves until you tap Approve";
-    $("approve").disabled = !pending.intentId || !pending.approvalCode;
+const money2 = (cents: number) => (cents / 100).toFixed(2);
+
+function cardData(i: SendIntent): CardPreview {
+  return {
+    intentId: i.id,
+    to: i.to.name,
+    toAddress: i.to.address,
+    amount: money2(i.amount),
+    fee: money2(i.fee),
+    total: money2(i.total),
+    network: config.moneyMode === "testnet" ? "testnet" : "mock",
+    dailyLeftAfter: money2(i.dailyRemainingAfter),
+    perPaymentCap: money2(i.perPaymentCap),
+    expiresAt: i.expiresAt,
   };
-  $("approve").onclick = async () => {
-    $("approve").disabled = true;
-    $("msg").textContent = "Approving…";
-    try {
-      const r = await app.callServerTool({ name: "approve_preview", arguments: pending });
-      $("msg").textContent = (r.content && r.content[0] && r.content[0].text) || "Done.";
-    } catch (e) {
-      $("msg").textContent = "Couldn't approve: " + (e && e.message ? e.message : e);
-    }
-  };
-  $("cancel").onclick = () => { $("approve").disabled = true; $("msg").textContent = "Cancelled. Nothing was sent."; pending = null; };
-  await app.connect();
-</script></body></html>`;
 }
 
 export function buildSpikeServer(baseUrl: string) {
@@ -132,7 +102,7 @@ export function buildSpikeServer(baseUrl: string) {
       note(`preview ${intent.id} created (${amount_usdc} USDC to ${to}); code issued in _meta only`);
       return {
         content: [{ type: "text", text: `Prepared a preview: ${amount_usdc} USDC to ${intent.to.name}. The user approves it on the card. You cannot approve it.` }],
-        structuredContent: { intentId: intent.id, to: intent.to.name, amount: (intent.amount / 100).toFixed(2) },
+        structuredContent: cardData(intent),
         _meta: { approvalCode: code },
       };
     },
@@ -154,7 +124,11 @@ export function buildSpikeServer(baseUrl: string) {
       if (!ok) return { content: [{ type: "text", text: "Not approved: this button only works from the card." }], isError: true };
       codes.delete(intentId);
       const res = await withWallet(s.userId, () => approveSendFromChat(s, intentId));
-      return { content: [{ type: "text", text: `Approved (mock, nothing broadcast). Reference ${res.activity?.txRef ?? "n/a"}.` }] };
+      const reference = res.activity?.txRef ?? "";
+      return {
+        content: [{ type: "text", text: `Approved (mock, nothing broadcast). Reference ${reference || "n/a"}.` }],
+        structuredContent: { reference },
+      };
     },
   );
 
@@ -163,8 +137,8 @@ export function buildSpikeServer(baseUrl: string) {
       {
         uri: CARD_URI,
         mimeType: RESOURCE_MIME_TYPE,
-        text: cardHtml(baseUrl),
-        _meta: { ui: { csp: { resourceDomains: [baseUrl] } } },
+        text: sendPreviewCardHtml(baseUrl),
+        _meta: { ui: { csp: { resourceDomains: [baseUrl, "https://fonts.googleapis.com", "https://fonts.gstatic.com"] } } },
       },
     ],
   }));
