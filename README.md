@@ -15,6 +15,7 @@ The product name is **Wura**. Older design screenshots still show an “Agent”
 - [Concept](docs/concept.md) — what it is and how it should work
 - [Routing](docs/routing.md) — how Wura compares rates across Stellar venues
 - [KYC and funding](docs/kyc-and-funding.md) — naira and USDC funding, and identity checks
+- [Money side](docs/money-side.md) — who owns which money files, working rules, and the naira partner findings
 - [Auth](docs/auth.md) — email sign-in mapped to a Stellar address (Privy for the buildathon)
 - [Wallet roadmap](docs/wallet-roadmap.md) — Privy now; Wura's own passkey smart wallet with on-chain limits next
 - [Site connect](docs/site-connect.md) — connect to other blockchain sites (allow list, contract discovery, later browser option)

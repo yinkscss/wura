@@ -82,3 +82,13 @@ Posts on X (not a substitute for the docs above):
 - Barça Mobile in-app wallet with Wirex, Crossmint and Stellar (August 2026): https://x.com/Flexe_io/status/2088017829345800424
 - Para live on Stellar, amplified by @BuildOnStellar (August 2026): https://x.com/BuildOnStellar/status/2085027095638389088
 - Builder warning: USDC in a Stellar passkey / `C…` wallet can be rejected by exchanges (October 2026): https://x.com/Heisbei02/status/2109511076375044284
+
+## Chat approvals on testnet (built)
+
+Telegram (and later WhatsApp and MCP) approve sends with a per-user **agent key**, not the browser wallet. The user turns it on once on the Channels page, and their Privy wallet signs adding the key as a second Stellar signer:
+- user key weight 2, agent key weight 1;
+- thresholds low 1, medium 1, high 2.
+
+The agent key can pay but can't change signers, raise its own weight or merge the account. We tested this on testnet with throwaway accounts, and again end to end through the app. The user can turn it off on the same page, which removes the key and restores the default single-key setup.
+
+Caps are checked by Wura's server before every chat payment, not by Stellar. Keys are derived from `AGENT_KEY_SECRET`, so this stays testnet only. On-chain caps come with the passkey smart wallet in [Wallet roadmap](wallet-roadmap.md).

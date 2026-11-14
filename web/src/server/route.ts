@@ -2,9 +2,29 @@ import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { errorResponse, ApiFailure } from "./errors";
 import { getSession, type Session } from "./session";
+import { withWallet } from "./store";
 
 /** Wraps a route handler: requires a session and turns ApiFailure into JSON errors. */
 export function authed<T>(fn: (s: Session, req: NextRequest) => Promise<T> | T) {
+  return async (req: NextRequest) => {
+    try {
+      const s = await getSession(req);
+      if (!s) throw new ApiFailure("UNAUTHENTICATED", "Please sign in.", 401);
+      // One locked, saved wallet transaction per request (Postgres), or memory.
+      const data = await withWallet(s.userId, async () => fn(s, req));
+      return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
+    } catch (err) {
+      return errorResponse(err);
+    }
+  };
+}
+
+/**
+ * Like authed(), but without holding the wallet lock for the whole request.
+ * For handlers that do slow work (model calls) and lock the wallet themselves
+ * around each money step with withWallet().
+ */
+export function signedIn<T>(fn: (s: Session, req: NextRequest) => Promise<T> | T) {
   return async (req: NextRequest) => {
     try {
       const s = await getSession(req);

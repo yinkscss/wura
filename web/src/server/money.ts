@@ -6,16 +6,18 @@ import type {
   Currency,
   Limits,
   PaymentLink,
+  Contact,
   Quote,
   SendIntent,
 } from "@/lib/types";
 import { money, naira, usdc } from "@/lib/format";
-import { config } from "./config";
+import { chatApprovalsAvailable, chatApprovalStatus, sendWithAgentKey } from "./agent-key";
+import { config, serverDevSigning } from "./config";
 import { ApiFailure } from "./errors";
-import { compareVenues, EXAMPLE_FEE_BPS } from "./routing";
+import { compareVenues, EXAMPLE_FEE_BPS, marketRate, quoteSource } from "./routing";
 import type { Session } from "./session";
 import { signAndSubmit } from "./signer";
-import { getAccountStatus } from "./stellar";
+import { getAccountStatus, isValidAccount } from "./stellar";
 import { checkDestination, refuseInTestnet, startTestnetSend, usdcBalance } from "./testnet";
 import { newId, wallet, type WalletState } from "./store";
 
@@ -147,6 +149,14 @@ export async function getQuote(
     );
   }
   const best = quoted[0];
+  const live = quoteSource === "live";
+  // Compare live prices with the market rate, so a thin pool can't quietly cost the user.
+  const ref = live ? await marketRate() : null;
+  let vsMarketPct: number | undefined;
+  if (ref) {
+    const marketOut = input.from === "NGN" ? amountIn / ref.rate : amountIn * ref.rate;
+    vsMarketPct = Math.round(((best.amountOut - marketOut) / marketOut) * 1000) / 10;
+  }
   const quote: Quote = {
     id: newId("q"),
     from: input.from,
@@ -154,12 +164,16 @@ export async function getQuote(
     amountIn,
     amountOut: best.amountOut,
     rate: best.rate,
-    fee: Math.round((amountIn * EXAMPLE_FEE_BPS) / 10_000),
+    // Live: each venue's fees are already inside its quote.
+    fee: live ? 0 : Math.round((amountIn * EXAMPLE_FEE_BPS) / 10_000),
     venues: quoted,
     unquoted,
     bestVenue: best.venue,
     expiresAt: Date.now() + config.quoteTtlMs,
     status: "pending",
+    source: quoteSource,
+    market: ref ?? undefined,
+    vsMarketPct,
   };
   w.quotes.set(quote.id, quote);
   return quote;
@@ -212,15 +226,65 @@ export function cancelQuote(s: Session, quoteId: string) {
 
 // ---------- Send ----------
 
-function findContact(w: WalletState, name: string) {
+function findContact(w: WalletState, name: string): SendIntent["to"] | undefined {
   const raw = name.trim();
   // A raw Stellar address works as a recipient too.
   if (/^G[A-Z2-7]{55}$/.test(raw)) {
     const saved = w.contacts.find((c) => c.address === raw);
-    return saved ?? { name: `${raw.slice(0, 4)}…${raw.slice(-4)}`, address: raw };
+    return saved ? { ...saved, saved: true } : { name: shortAddr(raw), address: raw, saved: false };
   }
   const n = raw.toLowerCase();
-  return w.contacts.find((c) => c.name.toLowerCase() === n);
+  const c = w.contacts.find((c) => c.name.toLowerCase() === n);
+  return c ? { ...c, saved: true } : undefined;
+}
+
+const shortAddr = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
+
+// ---------- Favourites (saved recipients) ----------
+
+const MAX_CONTACTS = 100;
+
+export function listContacts(s: Session): Contact[] {
+  return wallet(s.userId).contacts.map((c) => ({ ...c }));
+}
+
+/**
+ * Saves a recipient under a name, so "send $10 to Isaac" works. Saving the
+ * same address again renames it. A name can only point at one address.
+ */
+export function saveContact(s: Session, input: { name: unknown; address: unknown }): Contact {
+  const w = wallet(s.userId);
+  const name = String(input.name ?? "").trim().replace(/\s+/g, " ");
+  const address = String(input.address ?? "").trim();
+  if (!/^[\p{L}][\p{L}\p{N} .'-]{0,29}$/u.test(name)) {
+    throw new ApiFailure("BAD_REQUEST", "Give them a name of up to 30 letters, like Isaac or Mum.");
+  }
+  if (!/^G[A-Z2-7]{55}$/.test(address) || !isValidAccount(address)) {
+    throw new ApiFailure("BAD_REQUEST", "That isn't a valid Stellar address. It starts with G and is 56 characters.");
+  }
+  const sameName = w.contacts.find((c) => c.name.toLowerCase() === name.toLowerCase());
+  if (sameName && sameName.address !== address) {
+    throw new ApiFailure("BAD_REQUEST", `You already have ${sameName.name} saved with a different address. Pick another name or remove that one first.`, 409);
+  }
+  const existing = w.contacts.find((c) => c.address === address);
+  if (existing) {
+    existing.name = name;
+    return { ...existing };
+  }
+  if (w.contacts.length >= MAX_CONTACTS) {
+    throw new ApiFailure("BAD_REQUEST", `You can save up to ${MAX_CONTACTS} favourites. Remove one first.`, 409);
+  }
+  const c: Contact = { name, address };
+  w.contacts.push(c);
+  return { ...c };
+}
+
+export function removeContact(s: Session, address: unknown) {
+  const w = wallet(s.userId);
+  const a = String(address ?? "");
+  const before = w.contacts.length;
+  w.contacts = w.contacts.filter((c) => c.address !== a);
+  return { removed: before !== w.contacts.length };
 }
 
 /** Step 1: build a preview. Refuses up front if it can't be within limits. */
@@ -233,7 +297,7 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
   if (!contact) {
     throw new ApiFailure(
       "UNKNOWN_CONTACT",
-      `I don't have "${input.to}" saved yet. Add them with their Stellar address first.`,
+      `I don't have "${input.to}" in your favourites yet. Send to their Stellar address once and I'll offer to save them, or add them on the Favourites page.`,
       404,
     );
   }
@@ -255,7 +319,7 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
   const limits = limitsFor(w);
   const intent: SendIntent = {
     id: newId("snd"),
-    to: { name: contact.name, address: contact.address },
+    to: { name: contact.name, address: contact.address, saved: contact.saved },
     asset,
     amount,
     fee,
@@ -272,7 +336,12 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
 }
 
 /** Step 2: send it. Re-checks everything; the preview is not trusted on its own. */
-export async function createSend(s: Session, input: { intentId: string; approve: unknown }) {
+/**
+ * `via: "chat"` is for chat channels (Telegram, WhatsApp, MCP) after the linked
+ * user tapped Approve: on testnet it signs with the agent key (agent-key.ts)
+ * instead of asking the browser wallet. Never reachable from the web routes.
+ */
+export async function createSend(s: Session, input: { intentId: string; approve: unknown; via?: "web" | "chat" }) {
   const w = wallet(s.userId);
   const intent = w.sends.get(String(input.intentId));
   if (!intent) throw new ApiFailure("INTENT_NOT_FOUND", "That payment preview doesn't exist. Ask again.", 404);
@@ -287,6 +356,17 @@ export async function createSend(s: Session, input: { intentId: string; approve:
     throw new ApiFailure("NOT_APPROVED", "Nothing was sent. A payment only goes ahead when you confirm it.", 403);
   }
   if (config.moneyMode === "testnet") {
+    if (input.via === "chat") {
+      // Agent key when the user turned chat approvals on; the server's dev key
+      // (TESTNET_SIGNER=server-dev) also works without a browser.
+      if (chatApprovalsAvailable() && (await chatApprovalStatus(s)).active) return sendWithAgentKey(s, intent);
+      if (serverDevSigning()) return startTestnetSend(s, intent);
+      throw new ApiFailure(
+        "CHAT_APPROVAL_OFF",
+        "Chat approvals are off for your wallet. Turn them on in Wura on the web (Channels), then try again.",
+        403,
+      );
+    }
     // Builds the real transaction; the user's wallet signs it next.
     return startTestnetSend(s, intent);
   }

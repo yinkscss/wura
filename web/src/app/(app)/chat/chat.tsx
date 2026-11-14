@@ -12,6 +12,7 @@ import { api, ClientApiError } from "@/lib/api";
 import { naira, usdc, usdcNumber } from "@/lib/format";
 import type { AgentCard, AgentReply, NeedsSignature, Quote, SendIntent, SiteAction, SiteConnectRequest } from "@/lib/types";
 import { useCompleteSigning } from "@/lib/signing";
+import { SaveContactCard } from "@/components/save-contact";
 import { SiteActionCard, SitePermissionCard } from "@/components/site-cards";
 
 type Msg =
@@ -65,7 +66,11 @@ export function Chat() {
       setThinking(true);
       try {
         const [reply] = await Promise.all([
-          api<AgentReply>("/api/agent", { message: t }),
+          api<AgentReply>("/api/agent", {
+            message: t,
+            // Recent lines as plain text, so follow-ups like "make it 30k" make sense.
+            history: msgs.slice(-8).map((m) => ({ role: m.role, text: m.text })),
+          }),
           new Promise((r) => setTimeout(r, 650)),
         ]);
         if (reply.card?.type === "link") setShowNgn(reply.card.link.currency === "NGN");
@@ -81,8 +86,19 @@ export function Chat() {
         setThinking(false);
       }
     },
-    [thinking, refresh, say],
+    [thinking, refresh, say, msgs],
   );
+
+  // Prefill without sending: /chat?draft=...
+  useEffect(() => {
+    const d = params.get("draft");
+    if (d) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setInput(d);
+      router.replace("/chat");
+      document.getElementById("chat-input")?.focus();
+    }
+  }, [params, router]);
 
   // Deep link: /chat?prompt=...
   useEffect(() => {
@@ -130,6 +146,12 @@ export function Chat() {
         say(`Sent ${usdc(intent.amount)} to ${intent.to.name}. Reference ${res.activity.txRef} (mock — nothing was broadcast).`);
       } else {
         say(`Sent ${usdc(intent.amount)} to ${intent.to.name} on Stellar testnet.`, undefined, res.activity.explorerUrl);
+      }
+      if (intent.to.saved === false) {
+        say("Want to save this address? Then next time you can just say “send to” and their name.", {
+          type: "save-contact",
+          address: intent.to.address,
+        });
       }
       void refresh();
     } catch (e) {
@@ -232,7 +254,8 @@ export function Chat() {
               <div>
                 <h1 className="text-[24px] font-bold tracking-[-0.03em]">What do you want to do?</h1>
                 <p className="mx-auto mt-1.5 max-w-[420px] text-[14.5px] text-muted">
-                  I compare rates, show you a preview, and only move money when you approve. Example data, mock mode.
+                  I compare rates, show you a preview, and only move money when you approve.{" "}
+                  {data?.me.moneyMode === "testnet" ? "Stellar testnet: sends use test USDC." : "Example data, mock mode."}
                 </p>
               </div>
             </motion.div>
@@ -386,15 +409,19 @@ function CardFor({
       return (
         <Card className={shell}>
           <div className="text-[11.5px] font-semibold uppercase tracking-[0.12em] text-soft">
-            Rates for {naira(card.quote.amountIn)} → USDC · example
+            Rates for {naira(card.quote.amountIn)} → USDC · {card.quote.source === "live" ? "live" : "example"}
           </div>
           <div className="mt-4">
             <RateRows venues={card.quote.venues} unit="USDC" />
           </div>
           {card.quote.unquoted.length > 0 && (
-            <p className="mt-3 text-[13px] text-muted">
-              {card.quote.unquoted.map((u) => u.name).join(" and ")} couldn’t be quoted, so it isn’t compared.
-            </p>
+            <div className="mt-3 flex flex-col gap-1 text-[13px] text-muted">
+              {card.quote.unquoted.map((u) => (
+                <span key={u.venue}>
+                  {u.name} not compared: {u.reason.charAt(0).toLowerCase() + u.reason.slice(1)}.
+                </span>
+              ))}
+            </div>
           )}
           <Button className="mt-5 w-full" variant="outline-blue" onClick={() => onSay(`Change ${naira(card.quote.amountIn)} to dollars`)}>
             Prepare this swap
@@ -439,6 +466,12 @@ function CardFor({
             onCancel={() => onCancel(card)}
             onRefresh={onRetry}
           />
+        </Card>
+      );
+    case "save-contact":
+      return (
+        <Card className={shell}>
+          <SaveContactCard address={card.address} />
         </Card>
       );
     case "refused":
