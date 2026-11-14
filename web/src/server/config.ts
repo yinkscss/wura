@@ -56,6 +56,26 @@ export const config = {
     .split(",")
     .map((v) => v.trim().toLowerCase())
     .filter(Boolean),
+  /** Telegram bot. Off unless the token, webhook secret and bot username are all set. */
+  telegram: {
+    get token() {
+      return (process.env.TELEGRAM_BOT_TOKEN || "").trim();
+    },
+    get webhookSecret() {
+      return (process.env.TELEGRAM_WEBHOOK_SECRET || "").trim();
+    },
+    get botUsername() {
+      return (process.env.TELEGRAM_BOT_USERNAME || "").trim().replace(/^@/, "");
+    },
+    /** Public https origin of this app, for links the bot sends. Falls back to the Vercel URL. */
+    get appUrl() {
+      const u = (process.env.APP_URL || "").trim() || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+      return u.replace(/\/+$/, "");
+    },
+    get enabled() {
+      return Boolean(this.token && this.webhookSecret && this.botUsername);
+    },
+  },
   /** How long a swap quote or send preview stays approvable. */
   quoteTtlMs: 60_000,
   /** How long a built transaction waits for the user's signature. */

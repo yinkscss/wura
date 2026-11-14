@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "testnet": "node scripts/testnet-setup.mjs",
-    "agent-eval": "node scripts/agent-eval.mjs"
+    "agent-eval": "node scripts/agent-eval.mjs",
+    "test": "tsx --tsconfig tsconfig.test.json --test \"src/**/*.test.ts\" \"src/**/*.test.mts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
@@ -36,6 +37,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "tailwindcss": "4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

@@ -1,6 +1,7 @@
 import { ChatApprovalsCard } from "@/components/chat-approvals";
 import { ConnectedAppsCard } from "@/components/connected-apps";
 import { buttonClass, Card } from "@/components/ui";
+import { TelegramCard } from "@/components/telegram-card";
 import { ConnectedApps, PageHeader } from "@/components/wallet-parts";
 
 const MCP_URL = `${(process.env.APP_URL || "https://wurapay.xyz").replace(/\/+$/, "")}/mcp`;
@@ -32,11 +33,12 @@ export default function ChannelsPage() {
             Or add it by hand: Settings → Connectors → Add custom connector, then paste{" "}
             <span className="break-all font-mono text-[12.5px] text-blue">{MCP_URL}</span>
           </p>
-          <p>For now Claude can check your balance, rates and favourites. Preparing payments from Claude comes next. ChatGPT, Telegram and WhatsApp aren’t connected yet.</p>
+          <p>For now Claude can check your balance, rates and favourites. Preparing payments from Claude comes next. Telegram can be connected below once it’s set up on this server. ChatGPT and WhatsApp aren’t connected yet.</p>
           <p>Each one uses the same wallet, the same limits and the same approval step. A chat app only gets a key that’s capped to your limits, and it can’t move money without your yes.</p>
         </Card>
       </div>
       <ConnectedAppsCard />
+      <TelegramCard />
       <ChatApprovalsCard />
     </div>
   );

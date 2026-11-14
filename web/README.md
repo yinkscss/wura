@@ -134,7 +134,23 @@ Otherwise the API returns an error, and nothing is signed. The caps are **exampl
 - **Favourites** (`/favourites`, `/api/contacts`): saved names for Stellar addresses, kept in the wallet state (Postgres). After a send to an address that isn't saved, the chat offers a "Save to favourites" card; "send $10 to Isaac" then resolves the name. The chat model can also save (`save_contact`) and list (`list_contacts`) favourites. A name maps to one address; saving an address again renames it.
 - **Chat eval** (`npm run agent-eval -- <url>`): ten fixed prompts against a mock-mode server, checking card types and that the activity log never grows. Makes real calls to the configured model.
 
-Claude, ChatGPT, Telegram and WhatsApp appear only as "connected apps" labels, marked as not connected yet. They use generic icons, not their logos.
+- **Telegram bot** (`src/server/telegram/`, `/api/telegram/webhook`, `/api/telegram/link`): the same chat brain in Telegram, plan in `docs/telegram-bot-plan.md`. On the Channels page, "Connect Telegram" makes a single-use, 10-minute link (`t.me/<bot>?start=<code>`); the bot links that chat to the user's `user_id` only. Email and address come from the shared `users` table (`recordUser` / `sessionForUser` in `src/server/users.ts`, also used by the Claude connector), written on every sign-in, so they never go stale. Replies are plain text; quote, send and site cards become messages with inline buttons. Money moves only when the linked user taps a button: the tap calls `approveSendFromChat` / `approveSwapFromChat` / `cancelSend` / `cancelQuote` from `channel.ts` inside `withWallet`, and free text such as "yes" never approves. The webhook checks Telegram's secret header in constant time, ignores repeated `update_id`s, answers 200 and does the work in `after()` (`maxDuration` 60). Only private chats are served; 20 messages a minute per user. Rate limit, history and links live in Postgres (in memory without `DATABASE_URL`, demo only). On testnet with Privy, sends need "Approve from chat apps" turned on, otherwise the bot shows the `CHAT_APPROVAL_OFF` message; swaps are refused on testnet.
+
+Claude, ChatGPT and WhatsApp appear only as "connected apps" labels, marked as not connected yet. They use generic icons, not their logos.
+
+### Telegram bot setup
+
+1. Create a bot with @BotFather and copy its token.
+2. Set these in `.env.local` (or Vercel): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` (no `@`), `TELEGRAM_WEBHOOK_SECRET` (16+ characters: letters, digits, `_`, `-`), and optionally `APP_URL` (public https origin; defaults to the Vercel URL). The bot is off unless the first three are set.
+3. Point Telegram at the app (needs a public https URL; use a tunnel such as cloudflared locally):
+
+```bash
+node scripts/telegram-webhook.mjs set https://your-app.example.com
+node scripts/telegram-webhook.mjs info     # check it, shows last error
+node scripts/telegram-webhook.mjs delete   # remove it
+```
+
+4. Sign in to the web app, open Channels, tap Connect Telegram, then Start in the chat.
 
 ## Scripts
 
@@ -142,4 +158,5 @@ Claude, ChatGPT, Telegram and WhatsApp appear only as "connected apps" labels, m
 npm run dev     # local dev server
 npm run build   # production build
 npm run lint    # ESLint
+npm test        # unit and safety tests (no network, no database)
 ```

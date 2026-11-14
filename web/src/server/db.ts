@@ -92,6 +92,34 @@ create table if not exists oauth_tokens (
   created_at   timestamptz not null default now()
 );
 create index if not exists oauth_tokens_user on oauth_tokens (user_id, client_id);
+-- Telegram: the link to a user_id, the Telegram handle shown on the Channels
+-- card (so a wrong link is easy to spot), and the last few chat lines for
+-- context. Email and wallet address are never stored here (they come from the
+-- users table above). History can include amounts, names and addresses from the
+-- chat; it is deleted on unlink.
+create table if not exists telegram_links (
+  telegram_user_id bigint primary key,
+  user_id          text not null unique,
+  history          jsonb not null default '[]',
+  created_at       timestamptz not null default now()
+);
+alter table telegram_links add column if not exists tg_username text;
+alter table telegram_links add column if not exists tg_name     text;
+create table if not exists telegram_link_codes (
+  code_hash  text primary key,
+  user_id    text not null,
+  expires_at timestamptz not null
+);
+create table if not exists telegram_rate (
+  telegram_user_id bigint not null,
+  window_start     timestamptz not null,
+  count            integer not null default 0,
+  primary key (telegram_user_id, window_start)
+);
+create table if not exists telegram_updates (
+  update_id bigint primary key,
+  at        timestamptz not null default now()
+);
 `;
 
 /** Creates the tables once per process (idempotent). Also: npm run db:migrate. */

@@ -1,6 +1,6 @@
 # Telegram bot integration plan
 
-Status: plan only. Nothing in the Telegram bot is built. It follows the code as of `main` (chat brain in `web/src/server/agent.ts`, tools in `web/src/server/tools.ts`, money flow in `web/src/server/money.ts`, chat entry points in `web/src/server/channel.ts`). Updated after review and after the chat agent key landed (PR #13).
+Status: built in phases 1 to 4 (mock mode, tested); phase 5 (live testnet check with a real linked user) is still to do. It follows the code as of `main` (chat brain in `web/src/server/agent.ts`, tools in `web/src/server/tools.ts`, money flow in `web/src/server/money.ts`, chat entry points in `web/src/server/channel.ts`). Updated after review and after the chat agent key landed (PR #13).
 
 ## What we found in the codebase
 
