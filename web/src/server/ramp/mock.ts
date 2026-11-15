@@ -29,6 +29,7 @@ export const mockRamp: RampProvider = {
   id: "mock",
   live: false,
   identityCheck: "wura_mock",
+  receives: ["NGN"],
 
   async limits() {
     return {

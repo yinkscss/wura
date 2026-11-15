@@ -23,9 +23,9 @@ export type RampBounds = {
 };
 
 /**
- * The currency a partner's limits and top-up amounts are in. The mock works in
- * naira. The live partner works in dollars: the user pays naira on the
- * partner's page and dollars arrive in the wallet.
+ * What a top-up lands as in the wallet. The user always pays naira from a bank
+ * account. "NGN": it stays naira. "USDC": it arrives as dollars. Limits and
+ * top-up amounts are in this currency.
  */
 export type RampCurrency = "NGN" | "USDC";
 
@@ -41,8 +41,10 @@ export type RampInfo = {
    * the details.
    */
   identityCheck: "wura_mock" | "partner_page";
-  /** Partner limits with Wura's own trial cap already applied. */
+  /** Limits for the default choice (the first of `options`), with Wura's own trial cap applied. */
   limits: RampLimits;
+  /** One entry per thing a top-up can land as. The mock has naira only. */
+  options: RampLimits[];
 };
 
 /** A top-up the user completes by bank transfer (mock). */
@@ -80,6 +82,8 @@ export type TopUpOrder = MockTopUp | PartnerTopUp;
  */
 export type PartnerSignIn = {
   status: "needs_partner_signin";
+  /** Send this back with the signature: each choice has its own partner sign-in. */
+  receive: RampCurrency;
   hash: string;
   address: string;
   challenge: string;
@@ -117,19 +121,21 @@ export interface RampProvider {
   id: RampId;
   live: boolean;
   identityCheck: RampInfo["identityCheck"];
+  /** What a top-up can land as. The first is the default. */
+  receives: RampCurrency[];
   /** The partner's own limits, before Wura's trial cap. */
-  limits(): Promise<RampLimits>;
+  limits(receive: RampCurrency): Promise<RampLimits>;
   /** Only for providers whose identityCheck is "wura_mock". */
   verifyIdentity(s: Session, input: { nin: unknown; consent: unknown }): { kycStatus: "verified" };
   /**
    * The amount has already been checked against the limits. Providers with a
    * partner sign-in return PartnerSignIn when `partnerToken` is missing or stale.
    */
-  startTopUp(s: Session, input: { amount: number; partnerToken?: string }): Promise<TopUpOrder | PartnerSignIn>;
+  startTopUp(s: Session, input: { amount: number; receive: RampCurrency; partnerToken?: string }): Promise<TopUpOrder | PartnerSignIn>;
   /** Only for providers with a partner sign-in. Checks the challenge again, then trades it for a session. */
-  finishSignIn?(s: Session, input: { challenge: unknown; signature: unknown }): Promise<PartnerSession>;
+  finishSignIn?(s: Session, input: { receive: RampCurrency; challenge: unknown; signature: unknown }): Promise<PartnerSession>;
   /** Only for live providers. */
-  topUpStatus?(s: Session, input: { id: string; partnerToken?: string }): Promise<TopUpStatus | PartnerSignIn>;
+  topUpStatus?(s: Session, input: { id: string; receive: RampCurrency; partnerToken?: string }): Promise<TopUpStatus | PartnerSignIn>;
   /** Never signs. See the boundaries above. */
   previewCashOut(s: Session, input: { amount: number }): Promise<CashOutPreview>;
   /**

@@ -5,45 +5,62 @@ import type { Session } from "../session";
 import { loadAnchor, type AnchorEndpoints, type AnchorPin } from "./sep1";
 import { ChallengeError, checkChallenge, exchangeChallenge, fetchChallenge, readAnchorToken, signChallenge } from "./sep10";
 import { getInfo, getTransfer, startInteractive, type Sep24Info } from "./sep24";
-import type { PartnerSignIn, RampProvider } from "./types";
+import type { PartnerSignIn, RampCurrency, RampProvider } from "./types";
 
 /**
- * LINK's dollar anchor (anchor.linkio.world) on Stellar MAINNET. The user pays
- * naira by bank transfer on LINK's hosted page and USDC arrives in the wallet;
- * a cash-out is the reverse. It runs SEP-10 sign-in and SEP-24. Its hosted
- * page collects identity and bank details, so Wura never handles them.
+ * LINK, on Stellar MAINNET. In both of its services the user pays NAIRA by
+ * bank transfer on LINK's hosted page, which also collects identity and bank
+ * details, so Wura never handles them. What differs is what lands in the
+ * wallet:
  *
- * Why this anchor and not LINK's NGNC one (ngnc.online): NGNC has to be sold
- * for USDC on the open market, and on 13 Nov 2026 that lost about a third on
- * small amounts (docs/money-side.md). This one pays out USDC directly.
+ *   NGN  — ngnc.online: naira stays naira (the NGNC token). This is the
+ *          wallet's naira balance.
+ *   USDC — anchor.linkio.world: naira arrives as dollars (USDC), with no swap.
+ *          Selling NGNC for USDC on the open market lost about a third on
+ *          small amounts on 13 Nov 2026 (docs/money-side.md), so "naira in,
+ *          dollars out" goes through this one.
+ *
+ * Both run SEP-10 sign-in and SEP-24, with separate domains and signing keys,
+ * so each has its own pin and its own partner session.
  *
  * What is switched on in this version: reading limits, signing in to the
  * partner, starting a top-up and reading its status. Cash-outs are refused
  * until the approval hook exists (docs/money-side.md, "Plan").
  *
- * The anchor is open: no key or agreement is needed to call it, and nothing
- * is agreed with LINK. Customer-facing text says "partner" and does not name
- * it. No real top-up has been completed through it yet.
+ * Both are open: no key or agreement is needed to call them, and nothing is
+ * agreed with LINK. Customer-facing text says "partner" and does not name it.
+ * No real top-up has been completed through either yet.
  */
 
-/** Recorded from https://anchor.linkio.world/.well-known/stellar.toml on 14 Nov 2026. */
-export const LINK_PIN: AnchorPin = {
-  homeDomain: "anchor.linkio.world",
-  networkPassphrase: Networks.PUBLIC,
-  signingKey: "GC2MQRX47W5HQOBQPRE6A6ULZIJ5NGDJKDK7NYKNX3HY5OQSOGKOJC7D",
-};
+type LinkService = { pin: AnchorPin; asset: { code: string; issuer: string } };
 
-/** USDC as issued by Circle on Stellar mainnet. */
-export const LINK_ASSET = {
-  code: "USDC",
-  issuer: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+export const LINK: Record<RampCurrency, LinkService> = {
+  /** Recorded from https://ngnc.online/.well-known/stellar.toml on 13 Nov 2026. */
+  NGN: {
+    pin: {
+      homeDomain: "ngnc.online",
+      networkPassphrase: Networks.PUBLIC,
+      signingKey: "GCQLPBWOQ5PAJYEEQBE7GDSY7X3LCYKFEBKOCNF3OUA6F74ORK74HVSQ",
+    },
+    asset: { code: "NGNC", issuer: "GASBV6W7GGED66MXEVC7YZHTWWYMSVYEY35USF2HJZBLABLYIFQGXZY6" },
+  },
+  /** Recorded from https://anchor.linkio.world/.well-known/stellar.toml on 14 Nov 2026. USDC is Circle's. */
+  USDC: {
+    pin: {
+      homeDomain: "anchor.linkio.world",
+      networkPassphrase: Networks.PUBLIC,
+      signingKey: "GC2MQRX47W5HQOBQPRE6A6ULZIJ5NGDJKDK7NYKNX3HY5OQSOGKOJC7D",
+    },
+    asset: { code: "USDC", issuer: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN" },
+  },
 };
 
 /** Mainnet Horizon, read-only: used to check the wallet can receive before a top-up starts. */
 const MAINNET_HORIZON = "https://horizon.stellar.org";
 
 const CACHE_MS = 5 * 60 * 1000;
-let cached: { at: number; anchor: AnchorEndpoints; info: Sep24Info } | null = null;
+type Loaded = { at: number; anchor: AnchorEndpoints; info: Sep24Info };
+const cached: Partial<Record<RampCurrency, Loaded>> = {};
 
 function unreachable(err: unknown): never {
   if (err instanceof ApiFailure) throw err;
@@ -52,14 +69,14 @@ function unreachable(err: unknown): never {
   throw new ApiFailure("BAD_REQUEST", "The naira partner can't be reached right now. Nothing was sent.", 502);
 }
 
-/** The anchor's validated endpoints and published limits, cached for five minutes. */
-export async function linkAnchor() {
-  if (cached && Date.now() - cached.at < CACHE_MS) return cached;
+/** One service's validated endpoints and published limits, cached for five minutes. */
+export async function linkAnchor(receive: RampCurrency): Promise<Loaded> {
+  const hit = cached[receive];
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit;
   try {
-    const anchor = await loadAnchor(LINK_PIN);
-    const info = await getInfo(anchor.transferServer, LINK_ASSET.code);
-    cached = { at: Date.now(), anchor, info };
-    return cached;
+    const anchor = await loadAnchor(LINK[receive].pin);
+    const info = await getInfo(anchor.transferServer, LINK[receive].asset.code);
+    return (cached[receive] = { at: Date.now(), anchor, info });
   } catch (err) {
     unreachable(err);
   }
@@ -76,13 +93,14 @@ function expectation(anchor: AnchorEndpoints, account: string) {
 }
 
 /** Asks the partner for a sign-in challenge and checks it before the wallet is asked to sign. */
-async function signInStart(s: Session): Promise<PartnerSignIn> {
-  const { anchor } = await linkAnchor();
+async function signInStart(s: Session, receive: RampCurrency): Promise<PartnerSignIn> {
+  const { anchor } = await linkAnchor(receive);
   try {
     const xdr = await fetchChallenge({ webAuthEndpoint: anchor.webAuthEndpoint, account: s.address, homeDomain: anchor.homeDomain });
     const checked = checkChallenge(xdr, expectation(anchor, s.address));
     return {
       status: "needs_partner_signin",
+      receive,
       hash: checked.hash,
       address: s.address,
       challenge: checked.xdr,
@@ -104,13 +122,17 @@ function usable(token: string | undefined, account: string) {
 }
 
 /**
- * Can this wallet receive dollars on the live network? Checked before a
- * top-up starts, so nobody pays naira for dollars the partner can't deliver.
+ * Can this wallet receive this money on the live network? Checked before a
+ * top-up starts, so nobody pays naira for money the partner can't deliver.
  */
-async function requireCanReceive(account: string) {
+async function requireCanReceive(account: string, receive: RampCurrency) {
   const cantCheck = () => new ApiFailure("BAD_REQUEST", "We couldn't check your wallet right now. Nothing was sent.", 502);
   const notReady = () =>
-    new ApiFailure("SIGNING_UNAVAILABLE", "Your wallet isn't set up to receive dollars from the naira partner yet. Nothing was sent.", 409);
+    new ApiFailure(
+      "SIGNING_UNAVAILABLE",
+      `Your wallet isn't set up to receive ${receive === "NGN" ? "naira" : "dollars"} from the naira partner yet. Nothing was sent.`,
+      409,
+    );
   let res: Response;
   try {
     res = await fetch(`${MAINNET_HORIZON}/accounts/${account}`, { redirect: "error", signal: AbortSignal.timeout(8000) });
@@ -122,18 +144,19 @@ async function requireCanReceive(account: string) {
   if (res.status === 404 || res.status === 400) throw notReady();
   if (!res.ok) throw cantCheck();
   const body = (await res.json().catch(() => null)) as { balances?: Array<{ asset_code?: string; asset_issuer?: string }> } | null;
-  const ok = body?.balances?.some((b) => b.asset_code === LINK_ASSET.code && b.asset_issuer === LINK_ASSET.issuer);
-  if (!ok) throw notReady();
+  const { code, issuer } = LINK[receive].asset;
+  if (!body?.balances?.some((b) => b.asset_code === code && b.asset_issuer === issuer)) throw notReady();
 }
 
 export const linkRamp: RampProvider = {
   id: "link",
   live: true,
   identityCheck: "partner_page",
+  receives: ["NGN", "USDC"],
 
-  async limits() {
-    const { info } = await linkAnchor();
-    return { currency: "USDC", topUp: info.deposit, cashOut: info.withdraw };
+  async limits(receive) {
+    const { info } = await linkAnchor(receive);
+    return { currency: receive, topUp: info.deposit, cashOut: info.withdraw };
   },
 
   verifyIdentity() {
@@ -141,7 +164,7 @@ export const linkRamp: RampProvider = {
   },
 
   async finishSignIn(s, input) {
-    const { anchor } = await linkAnchor();
+    const { anchor } = await linkAnchor(input.receive);
     let signedXdr: string;
     try {
       // The challenge comes back from the browser, so it is checked again from
@@ -166,35 +189,35 @@ export const linkRamp: RampProvider = {
     }
   },
 
-  async startTopUp(s, { amount, partnerToken }) {
-    await requireCanReceive(s.address);
+  async startTopUp(s, { amount, receive, partnerToken }) {
+    await requireCanReceive(s.address, receive);
     const token = usable(partnerToken, s.address);
-    if (!token) return signInStart(s);
-    const { anchor } = await linkAnchor();
+    if (!token) return signInStart(s, receive);
+    const { anchor } = await linkAnchor(receive);
     try {
       const page = await startInteractive("deposit", {
         transferServer: anchor.transferServer,
         homeDomain: anchor.homeDomain,
         token,
-        assetCode: LINK_ASSET.code,
-        assetIssuer: LINK_ASSET.issuer,
+        assetCode: LINK[receive].asset.code,
+        assetIssuer: LINK[receive].asset.issuer,
         account: s.address,
         amount,
       });
-      return { id: page.id, amount, currency: "USDC", status: "open_partner_page", mock: false, url: page.url };
+      return { id: page.id, amount, currency: receive, status: "open_partner_page", mock: false, url: page.url };
     } catch (err) {
       unreachable(err);
     }
   },
 
-  async topUpStatus(s, { id, partnerToken }) {
+  async topUpStatus(s, { id, receive, partnerToken }) {
     const token = usable(partnerToken, s.address);
-    if (!token) return signInStart(s);
-    const { anchor } = await linkAnchor();
+    if (!token) return signInStart(s, receive);
+    const { anchor } = await linkAnchor(receive);
     try {
       const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
       if (t.kind !== "deposit") throw new Error("not a top-up");
-      return { id, state: t.state, currency: "USDC", received: t.amountOut, fee: t.fee, txRef: t.stellarTxId };
+      return { id, state: t.state, currency: receive, received: t.amountOut, fee: t.fee, txRef: t.stellarTxId };
     } catch (err) {
       unreachable(err);
     }
@@ -204,7 +227,7 @@ export const linkRamp: RampProvider = {
     throw new ApiFailure("SIGNING_UNAVAILABLE", "Naira cash-outs through the partner aren't switched on yet. Nothing was sent.", 409);
   },
 
-  /** The anchor publishes no quote service (no SEP-38); the rate is shown on its page. */
+  /** Neither service publishes quotes (no SEP-38); the rate is shown on the partner's page. */
   async quote() {
     return null;
   },

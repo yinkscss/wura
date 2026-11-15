@@ -31,13 +31,21 @@ function capped(b: RampBounds, cap: number): RampBounds {
 /** What the top-up and cash-out screens need: limits come from the partner, never hard-coded. */
 export async function rampInfo(): Promise<RampInfo> {
   const p = ramp();
-  const l = await p.limits();
-  return {
-    provider: p.id,
-    live: p.live,
-    identityCheck: p.identityCheck,
-    limits: { currency: l.currency, topUp: capped(l.topUp, EXAMPLE_TRIAL_TOPUP_CAP[l.currency]), cashOut: l.cashOut },
-  };
+  const options = await Promise.all(
+    p.receives.map(async (r) => {
+      const l = await p.limits(r);
+      return { currency: r, topUp: capped(l.topUp, EXAMPLE_TRIAL_TOPUP_CAP[r]), cashOut: l.cashOut };
+    }),
+  );
+  return { provider: p.id, live: p.live, identityCheck: p.identityCheck, limits: options[0], options };
+}
+
+/** Reads the caller's choice of what the top-up lands as. Missing means the default. */
+export function receiveChoice(v: unknown): RampCurrency {
+  const p = ramp();
+  if (v === undefined || v === null || v === "") return p.receives[0];
+  if ((v === "NGN" || v === "USDC") && p.receives.includes(v)) return v;
+  throw new ApiFailure("BAD_REQUEST", "That top-up choice isn't available.");
 }
 
 export function verifyIdentity(s: Session, input: { nin: unknown; consent: unknown }) {
@@ -45,18 +53,18 @@ export function verifyIdentity(s: Session, input: { nin: unknown; consent: unkno
 }
 
 /**
- * Starts a top-up. `amount` is in the partner's currency (RampInfo.limits.currency),
- * minor units. With a live partner the answer is either a page to open, or a
+ * Starts a top-up. The user pays naira; `receive` is what it lands as, and
+ * `amount` is in that currency, minor units. With a live partner the answer is either a page to open, or a
  * sign-in the wallet has to confirm first (PartnerSignIn).
  */
-export async function startTopUp(s: Session, input: { amount: number; partnerToken?: string }) {
-  const { limits } = await rampInfo();
+export async function startTopUp(s: Session, input: { amount: number; receive: RampCurrency; partnerToken?: string }) {
+  const limits = (await rampInfo()).options.find((o) => o.currency === input.receive);
+  if (!limits) throw new ApiFailure("BAD_REQUEST", "That top-up choice isn't available.");
   const { enabled, min, max } = limits.topUp;
   const amount = input.amount;
   if (!enabled) throw new ApiFailure("BAD_REQUEST", "Naira top-ups aren't available right now.", 409);
   if (!Number.isInteger(amount) || amount <= 0 || (min !== null && amount < min)) {
-    const what = limits.currency === "NGN" ? "naira top-up" : "top-up";
-    throw new ApiFailure("BAD_REQUEST", `The smallest ${what} is ${show(min ?? 1, limits.currency)}.`);
+    throw new ApiFailure("BAD_REQUEST", `The smallest naira top-up is ${show(min ?? 1, limits.currency)}.`);
   }
   if (max !== null && min !== null && max < min) {
     // The partner's minimum is above our trial cap: no amount is allowed.
@@ -65,7 +73,7 @@ export async function startTopUp(s: Session, input: { amount: number; partnerTok
   if (max !== null && amount > max) {
     throw new ApiFailure("TRIAL_LIMIT", `While naira top-ups are new, each one is capped at ${show(max, limits.currency)}.`, 403);
   }
-  return ramp().startTopUp(s, { amount, partnerToken: input.partnerToken });
+  return ramp().startTopUp(s, { amount, receive: input.receive, partnerToken: input.partnerToken });
 }
 
 function noPartnerSignIn(): never {
@@ -73,13 +81,13 @@ function noPartnerSignIn(): never {
 }
 
 /** Second half of the partner sign-in: the wallet's signature over the checked challenge. */
-export async function finishPartnerSignIn(s: Session, input: { challenge: unknown; signature: unknown }) {
+export async function finishPartnerSignIn(s: Session, input: { receive: RampCurrency; challenge: unknown; signature: unknown }) {
   const p = ramp();
   if (!p.finishSignIn) noPartnerSignIn();
   return p.finishSignIn(s, input);
 }
 
-export async function topUpStatus(s: Session, input: { id: string; partnerToken?: string }) {
+export async function topUpStatus(s: Session, input: { id: string; receive: RampCurrency; partnerToken?: string }) {
   const p = ramp();
   if (!p.topUpStatus) noPartnerSignIn();
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(input.id)) throw new ApiFailure("BAD_REQUEST", "That top-up wasn't found.", 404);
