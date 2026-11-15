@@ -113,9 +113,20 @@ What `RAMP_PROVIDER=link` does now:
 | `POST /api/funding/naira/signin` `{ receive, challenge, signature }` | The wallet's signature over `hash`. The server checks the challenge again from scratch, sends it to the partner, and keeps the partner session in an httpOnly cookie scoped to `/api/funding`. |
 | `GET /api/funding/naira/status?id=&receive=` | `waiting_for_you`, `processing`, `done` or `failed`. |
 
+### Cash-out to a naira bank account
+
+| Route | What it does |
+| --- | --- |
+| `POST /api/funding/naira/cashout` `{ amount, from? }` | `from` is what leaves the wallet (`NGN` or `USDC`); the bank account always receives naira. Checks the partner's limits and the wallet's real mainnet balance, then answers `needs_partner_signin` or `{ status: "open_partner_page", url, id }`. The user enters the bank account on the partner's page. Nothing moves. |
+| `GET /api/funding/naira/cashout?id=&from=` | `waiting_for_you`, `processing`, `done` or `failed`, plus `send` (what the wallet must send), `fee`, and `readyToPay`. |
+
+The last step is the wallet paying the partner. That is a money move, so it is **not** in the naira code and has no route. When `readyToPay` is true, `cashOutPayment(s, { id, from, partnerToken })` in `web/src/server/ramp/index.ts` returns the exact payment: `{ network: "mainnet", asset, amount, destination, memo, memoType }`. It refuses a destination that is not a valid address or is the user's own wallet, an empty memo, and an amount outside the partner's limits. `money.ts` (Olayinka's) takes it from there: show it, `approve: true`, caps, build, sign, submit, log. **That hook is not built**, so a cash-out stops at "the partner is ready to be paid".
+
+Checked live on both services with a throwaway wallet: an empty wallet is refused, and a cash-out request returns a page on the partner's own domain with status "waiting for you". Not checked: anything past the partner's page (bank details, the payment, the payout).
+
 For the screen (Olayinka's): on `needs_partner_signin`, sign `hash` with the same Privy hash signer used for sends, post to `signin`, then call `order` again and open `url`. The challenge has sequence number 0, so signing it cannot move money.
 
-What blocks a real top-up in the app: the app runs on testnet and the partner is on mainnet. A user's wallet has no mainnet account or trustline, so `order` refuses with "Your wallet isn't set up to receive naira from the naira partner yet." That is deliberate: nobody should pay naira for dollars that can't be delivered. Cash-outs are still refused.
+What blocks a real top-up in the app: the app runs on testnet and the partner is on mainnet. A user's wallet has no mainnet account or trustline, so `order` refuses with "Your wallet isn't set up to receive naira from the naira partner yet." That is deliberate: nobody should pay naira for money that can't be delivered. A cash-out is refused the same way, because the wallet holds nothing on mainnet.
 
 ## Plan, in order
 

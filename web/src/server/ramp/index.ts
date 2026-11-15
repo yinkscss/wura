@@ -76,6 +76,50 @@ export async function startTopUp(s: Session, input: { amount: number; receive: R
   return ramp().startTopUp(s, { amount, receive: input.receive, partnerToken: input.partnerToken });
 }
 
+/**
+ * Starts a cash-out to a naira bank account. `from` is what leaves the wallet
+ * (naira or dollars) and `amount` is in that currency, minor units. Mock: an
+ * example preview. Live: the partner's page, where the user enters the bank
+ * account, or a sign-in the wallet has to confirm first. Nothing moves here.
+ */
+export async function startCashOut(s: Session, input: { amount: number; from: RampCurrency; partnerToken?: string }) {
+  const p = ramp();
+  const limits = (await rampInfo()).options.find((o) => o.currency === input.from);
+  if (!limits) throw new ApiFailure("BAD_REQUEST", "That cash-out choice isn't available.");
+  const { enabled, min, max } = limits.cashOut;
+  const amount = input.amount;
+  if (!enabled) throw new ApiFailure("BAD_REQUEST", "Naira cash-outs aren't available right now.", 409);
+  if (!Number.isInteger(amount) || amount <= 0 || (min !== null && amount < min)) {
+    throw new ApiFailure("BAD_REQUEST", `The smallest cash-out is ${show(min ?? 1, limits.currency)}.`);
+  }
+  if (max !== null && amount > max) {
+    throw new ApiFailure("BAD_REQUEST", `The largest cash-out is ${show(max, limits.currency)}.`);
+  }
+  if (!p.startCashOut) return p.previewCashOut(s, { amount });
+  return p.startCashOut(s, { amount, from: input.from, partnerToken: input.partnerToken });
+}
+
+const ID = /^[A-Za-z0-9_-]{1,80}$/;
+
+export async function cashOutStatus(s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }) {
+  const p = ramp();
+  if (!p.cashOutStatus) noPartnerSignIn();
+  if (!ID.test(input.id)) throw new ApiFailure("BAD_REQUEST", "That cash-out wasn't found.", 404);
+  return p.cashOutStatus(s, input);
+}
+
+/**
+ * For server/money.ts only: the exact payment that finishes a cash-out, or
+ * null while the partner isn't ready for it. The caller shows it to the user,
+ * gets approval, applies the caps, builds, signs and logs it. This folder
+ * never signs.
+ */
+export async function cashOutPayment(s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }) {
+  const p = ramp();
+  if (!p.cashOutPayment || !ID.test(input.id)) return null;
+  return p.cashOutPayment(s, input);
+}
+
 function noPartnerSignIn(): never {
   throw new ApiFailure("BAD_REQUEST", "There is no partner sign-in in this mode.", 409);
 }

@@ -1,10 +1,10 @@
 import "server-only";
-import { Networks } from "@stellar/stellar-sdk";
+import { Networks, StrKey } from "@stellar/stellar-sdk";
 import { ApiFailure } from "../errors";
 import type { Session } from "../session";
 import { loadAnchor, type AnchorEndpoints, type AnchorPin } from "./sep1";
 import { ChallengeError, checkChallenge, exchangeChallenge, fetchChallenge, readAnchorToken, signChallenge } from "./sep10";
-import { getInfo, getTransfer, startInteractive, type Sep24Info } from "./sep24";
+import { getInfo, getTransfer, startInteractive, toMinor, type Sep24Info } from "./sep24";
 import type { PartnerSignIn, RampCurrency, RampProvider } from "./types";
 
 /**
@@ -24,8 +24,10 @@ import type { PartnerSignIn, RampCurrency, RampProvider } from "./types";
  * so each has its own pin and its own partner session.
  *
  * What is switched on in this version: reading limits, signing in to the
- * partner, starting a top-up and reading its status. Cash-outs are refused
- * until the approval hook exists (docs/money-side.md, "Plan").
+ * partner, starting a top-up or a cash-out on the partner's page, and reading
+ * its status. A cash-out ends with the wallet paying the partner; this file
+ * only hands the money code the exact payment to make (cashOutPayment). It
+ * never builds or signs it (docs/money-side.md).
  *
  * Both are open: no key or agreement is needed to call them, and nothing is
  * agreed with LINK. Customer-facing text says "partner" and does not name it.
@@ -122,15 +124,18 @@ function usable(token: string | undefined, account: string) {
 }
 
 /**
- * Can this wallet receive this money on the live network? Checked before a
- * top-up starts, so nobody pays naira for money the partner can't deliver.
+ * What the wallet holds of this money on the live network, in minor units.
+ * Refuses when the wallet doesn't exist there or can't hold it. Checked before
+ * a top-up starts, so nobody pays naira for money the partner can't deliver,
+ * and before a cash-out starts, so nobody is sent to the partner's page with
+ * nothing to cash out.
  */
-async function requireCanReceive(account: string, receive: RampCurrency) {
+async function mainnetHolding(account: string, receive: RampCurrency): Promise<number> {
   const cantCheck = () => new ApiFailure("BAD_REQUEST", "We couldn't check your wallet right now. Nothing was sent.", 502);
   const notReady = () =>
     new ApiFailure(
       "SIGNING_UNAVAILABLE",
-      `Your wallet isn't set up to receive ${receive === "NGN" ? "naira" : "dollars"} from the naira partner yet. Nothing was sent.`,
+      `Your wallet isn't set up to hold ${receive === "NGN" ? "naira" : "dollars"} with the naira partner yet. Nothing was sent.`,
       409,
     );
   let res: Response;
@@ -143,9 +148,11 @@ async function requireCanReceive(account: string, receive: RampCurrency) {
   // 404: the wallet doesn't exist on the live network. 400: not a real address (mock sign-in).
   if (res.status === 404 || res.status === 400) throw notReady();
   if (!res.ok) throw cantCheck();
-  const body = (await res.json().catch(() => null)) as { balances?: Array<{ asset_code?: string; asset_issuer?: string }> } | null;
+  const body = (await res.json().catch(() => null)) as { balances?: Array<{ asset_code?: string; asset_issuer?: string; balance?: string }> } | null;
   const { code, issuer } = LINK[receive].asset;
-  if (!body?.balances?.some((b) => b.asset_code === code && b.asset_issuer === issuer)) throw notReady();
+  const line = body?.balances?.find((b) => b.asset_code === code && b.asset_issuer === issuer);
+  if (!line) throw notReady();
+  return toMinor(line.balance) ?? 0;
 }
 
 export const linkRamp: RampProvider = {
@@ -190,7 +197,7 @@ export const linkRamp: RampProvider = {
   },
 
   async startTopUp(s, { amount, receive, partnerToken }) {
-    await requireCanReceive(s.address, receive);
+    await mainnetHolding(s.address, receive);
     const token = usable(partnerToken, s.address);
     if (!token) return signInStart(s, receive);
     const { anchor } = await linkAnchor(receive);
@@ -223,8 +230,65 @@ export const linkRamp: RampProvider = {
     }
   },
 
+  async startCashOut(s, { amount, from, partnerToken }) {
+    if ((await mainnetHolding(s.address, from)) < amount) {
+      throw new ApiFailure("INSUFFICIENT_BALANCE", "You don't have enough to cash out that amount. Nothing was sent.", 409);
+    }
+    const token = usable(partnerToken, s.address);
+    if (!token) return signInStart(s, from);
+    const { anchor } = await linkAnchor(from);
+    try {
+      const page = await startInteractive("withdraw", {
+        transferServer: anchor.transferServer,
+        homeDomain: anchor.homeDomain,
+        token,
+        assetCode: LINK[from].asset.code,
+        assetIssuer: LINK[from].asset.issuer,
+        account: s.address,
+        amount,
+      });
+      return { id: page.id, amount, currency: from, status: "open_partner_page", mock: false, url: page.url };
+    } catch (err) {
+      unreachable(err);
+    }
+  },
+
+  async cashOutStatus(s, { id, from, partnerToken }) {
+    const token = usable(partnerToken, s.address);
+    if (!token) return signInStart(s, from);
+    const { anchor } = await linkAnchor(from);
+    try {
+      const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
+      if (t.kind !== "withdrawal") throw new Error("not a cash-out");
+      return { id, state: t.state, currency: from, send: t.amountIn, fee: t.fee, readyToPay: t.payTo !== null, txRef: t.stellarTxId };
+    } catch (err) {
+      unreachable(err);
+    }
+  },
+
+  async cashOutPayment(s, { id, from, partnerToken }) {
+    const token = usable(partnerToken, s.address);
+    if (!token) return null;
+    const { anchor, info } = await linkAnchor(from);
+    try {
+      const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
+      if (t.kind !== "withdrawal" || !t.payTo) return null;
+      const { account, memo, memoType } = t.payTo;
+      const { min, max } = info.withdraw;
+      // The partner tells us where to pay. Refuse anything that doesn't look
+      // like a payment for this cash-out before the money code ever sees it.
+      if (!StrKey.isValidEd25519PublicKey(account) || account === s.address) throw new Error("bad cash-out destination");
+      if (!memo || memo.length > 64) throw new Error("bad cash-out memo");
+      if (t.amountIn === null || t.amountIn <= 0) throw new Error("cash-out has no amount");
+      if ((min !== null && t.amountIn < min) || (max !== null && t.amountIn > max)) throw new Error("cash-out amount outside the partner's limits");
+      return { id, network: "mainnet", currency: from, asset: LINK[from].asset, amount: t.amountIn, destination: account, memo, memoType };
+    } catch (err) {
+      unreachable(err);
+    }
+  },
+
   async previewCashOut() {
-    throw new ApiFailure("SIGNING_UNAVAILABLE", "Naira cash-outs through the partner aren't switched on yet. Nothing was sent.", 409);
+    throw new ApiFailure("BAD_REQUEST", "With the live partner a cash-out starts on the partner's page.", 409);
   },
 
   /** Neither service publishes quotes (no SEP-38); the rate is shown on the partner's page. */
