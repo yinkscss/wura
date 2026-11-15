@@ -1,6 +1,6 @@
 # Mainnet plan
 
-**Status: proposed on 15 November 2026 by Olayinka. Samuel (Otowo) to confirm his path below.** Change it in this file when the team agrees something different. It builds on [Money side](money-side.md) and replaces its "testnet stays the default" assumption.
+**Status: decisions D1 to D5 made on 15 November 2026 by Olayinka. Samuel (Otowo) to confirm his path below. Nothing is being built yet.** Change it in this file when the team agrees something different. It builds on [Money side](money-side.md) and replaces its "testnet stays the default" assumption.
 
 **The decision: Wura goes fully on Stellar mainnet.** There is no test version of the naira services we use, so the only honest test is the real one, with small amounts, in stages. Preview deployments stay on mock or testnet and can never move real money.
 
@@ -8,13 +8,15 @@
 
 | In the mainnet build | Out of the first release |
 | --- | --- |
-| Stellar wallet on mainnet (Privy `G…` account) | Swaps between naira and dollars on the open market (they lose money, see [Money side](money-side.md#findings-so-far)) |
-| Cash in: naira to naira (NGNC) or naira to dollars (USDC), through LINK | Site payments |
-| Cash out: naira to a bank account, through LINK | Smart-wallet (`C…`) accounts ([wallet roadmap](wallet-roadmap.md)) |
-| Stable transfers: USDC and NGNC to other wallets | Chat approvals with a server-held agent key (see D2) |
-| Payment links that really get paid | Naira tools in Claude, ChatGPT and Telegram |
+| Stellar wallet on mainnet (Privy `G…` account) | Site payments |
+| Cash in: naira to naira (NGNC) or naira to dollars (USDC), through LINK | Smart-wallet (`C…`) accounts ([wallet roadmap](wallet-roadmap.md)) |
+| Cash out: naira to a bank account, through LINK | Naira tools in Claude, ChatGPT and Telegram |
+| Stable transfers: USDC and NGNC to other wallets | |
+| Payment links that really get paid | |
+| Swaps between naira and USDC (D3) | |
+| Chat approvals on mainnet (D2, with conditions) | |
 
-"Get dollars for naira" is covered by the dollar anchor as a cash in, so no swap is needed. If you want swaps in the first release, say so here and add them to Olayinka's path.
+Swaps are in (D3). The dollar anchor still gives dollars for naira directly as a cash in, and is the better price at size: the open market loses a lot (₦50,000 gets about 22.6 USDC, roughly ₦2,209 per dollar, against about ₦1,514 per dollar the other way, see [Money side](money-side.md#findings-so-far)). The swap screen has to show that gap plainly.
 
 ## Why there are no test keys
 
@@ -25,22 +27,38 @@ LINK's test keys belong to its partner API, a different product (cedi, and payou
 - **Non-custodial.** Wura never holds user funds. Every payment is signed by the user's own Privy wallet.
 - **Mock stays the default.** `MONEY_MODE` is `mock` unless a deployment says otherwise. Mainnet is on in Production only, never in Preview.
 - **A kill switch.** One environment variable turns every real money move off without a deploy of new code.
-- **No server-held keys that can spend user money on mainnet.** The testnet `server-dev` signer and the derived chat-approval agent key both refuse to run on mainnet.
+- **The `server-dev` signer never runs on mainnet.** The chat-approval agent key does (D2), under the conditions in D2.
 - **Every money move** goes through `approve: true`, the caps, the signature, the submit and the log. Cash-outs too.
 - **Beta first.** An allowlist and caps at or below the current example caps. Lower them for the first week.
 - **Wording.** Say "through a partner". Do not say "licensed" or name LINK as agreed until it confirms in writing.
 - **Identity numbers** (NIN, BVN) are never stored, logged or sent through chat.
 
-## Decisions needed
+## Decisions
+
+**Made on 15 November 2026 (Olayinka):**
+
+| # | Decision | What it means |
+| --- | --- | --- |
+| D1 | **Wura keeps a reserve.** | A standing XLM balance in one treasury account that sponsors the base reserve and the two trustlines (USDC, NGNC) for each new beta user, so nobody has to buy XLM. The treasury key signs sponsorship only. Size it as users × about 2 XLM plus a fee buffer, and alert when it falls below a set level. Work out the cost per user at the current XLM price before the beta. |
+| D2 | **Chat approvals stay on for mainnet.** | The Wura agent key can approve payments from Telegram and later chat apps. See the conditions below. |
+| D3 | **Swaps are in the mainnet build.** | See M10. |
+| D4 | **Assets: USDC and NGNC.** | XLM is only the reserve and is never shown as something to spend. |
+| D5 | **Beta of 10 people**, raised from about five. | An allowlist by email, with caps at or below the example caps (₦75,000 and $50 per payment, ₦200,000 and $200 a day), lowered for the first week. |
+
+**Conditions on D2.** Today the agent key is derived from one secret (`AGENT_KEY_SECRET`) and the user's ID, so a leak would let someone sign payments for every opted-in account. Stellar can't cap an amount on chain, so the server caps are the only limit. I recommend these before any real money goes through a chat approval (Stage 3). Olayinka to confirm or change:
+1. Separate secret for Production, never shared with Preview or testnet.
+2. Per-user keys held so that one leaked secret doesn't expose every user: a random key per user, encrypted in the database with a master key kept in a KMS, or signing done inside the KMS. Decide which before building.
+3. Lower per-payment and daily caps for chat approvals than for web approvals.
+4. The user can switch it off from the web at any time, and the server reads the account's signers from Horizon before every chat payment (it does today), not a flag in the database.
+5. Chat approvals only for allowlisted users. A failed or odd approval pings the owner.
+
+**Still open:**
 
 | # | Question | Recommendation |
 | --- | --- | --- |
-| D1 | Who pays the XLM reserve? Mainnet has no Friendbot. An account needs about 1 XLM plus 0.5 XLM per trustline, and USDC plus NGNC is two. A chat-first product can't ask a new user to buy XLM. | Wura sponsors the reserves for allowlisted beta users from one small treasury account that only sponsors. Work out the cost per user at the current XLM price before opening up. |
-| D2 | Chat approvals (agent key) on mainnet. Today the key is derived from one secret, so a leak drains every opted-in account. | Off on mainnet. Telegram sends a link that opens the web app to sign. Revisit with per-user keys held in a KMS, or the smart wallet. |
-| D3 | Swaps in the first release? | No. Covered by the dollar anchor. |
-| D4 | Assets. | USDC (Circle, mainnet) and NGNC (LINK). XLM is only the reserve and is never shown as something to spend. |
-| D5 | Beta size and caps. | Allowlist by email, about five people first. Start at or below ₦75,000 and $50 per payment, then lower. |
 | D6 | When can real users beyond the beta come in? | Not before LINK answers on its Nigerian licence and the terms are written. This is a legal question; get advice before opening up. |
+
+**Circle's mainnet USDC issuer.** `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` (asset code `USDC`). Read on 15 November 2026 from Circle's [USDC contract addresses](https://developers.circle.com/stablecoins/usdc-contract-addresses) page, which also lists the testnet issuer `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` that the app uses today. The code already carries the mainnet one in `routing.ts` and `link.ts` for quotes. Recheck the page when the build starts.
 
 ## Otowo's path (naira partner: `web/src/server/ramp/`, `web/src/app/api/funding/**`)
 
@@ -63,13 +81,13 @@ Done when: a live-mode top-up and cash-out both complete end to end in staging, 
 
 ## Olayinka's path (`config.ts`, `stellar.ts`, `money.ts`, `testnet.ts`, `signer.ts`, `db.ts`, screens)
 
-**M1. Network config.** `config.ts` stops hard-coding testnet. `MONEY_MODE=mainnet` selects the passphrase, Horizon URL, explorer links and asset issuers. Friendbot exists on testnet only. Take the USDC issuer from Circle's own documentation, not from memory. Boot checks: mainnet refuses to start with `TESTNET_SIGNER=server-dev`, with `AGENT_KEY_SECRET` set, or in a Preview environment. Add the kill switch.
+**M1. Network config.** `config.ts` stops hard-coding testnet. `MONEY_MODE=mainnet` selects the passphrase, Horizon URL, explorer links and asset issuers. Friendbot exists on testnet only. The mainnet USDC issuer is the Circle address above. Mainnet refuses the testnet issuer, and a test pins the address. Boot checks: mainnet refuses to start with `TESTNET_SIGNER=server-dev`, in a Preview environment, or with chat approvals on and the D2 conditions not in place. Add the kill switch.
 Done when: switching the variable changes every address and link, and each refusal has a test.
 
 **M2. `stellar.ts` for real assets.** Take a network and an asset. Add the NGNC trustline builder (the issuer comes from LINK's config file, which Otowo's code already pins). Payments take any asset and a memo. `getBalances` shows real NGNC and USDC from Horizon.
 Done when: the balance card shows both on a mainnet wallet and a payment with a memo builds and verifies.
 
-**M3. Account setup and sponsorship (D1).** Create and activate the account, add both trustlines, with reserves sponsored from the treasury once D1 is agreed. The treasury key is separate from every other key, holds a small balance and can only sponsor.
+**M3. Account setup and sponsorship (D1).** Create and activate the account, add both trustlines, with the reserves sponsored from the treasury (D1). The treasury key is separate from every other key and signs sponsorship only. Add a low-balance alert and a count of sponsored accounts.
 Done when: a new allowlisted user ends up with an activated account and two trustlines without holding any XLM.
 
 **M4. Stable transfers.** USDC and NGNC to other wallets on mainnet. Destination checks: the account exists, it has the trustline, and the memo-required flag (SEP-29) is honoured, which exchanges use. Set a time bound on every transaction, recheck balance and caps just before submit, confirm on Horizon, then log with an explorer link. Make a submit that is retried safe (no double payment).
@@ -90,6 +108,17 @@ Done when: both complete in staging with the live partner.
 
 **M9. Docs and wording.** Terms and the "through a partner" wording on every screen that moves money.
 
+**M10. Swaps on mainnet (D3).** Today a swap is quoted but refused (`refuseInTestnet("Swaps")`). Plan: turn the best quote from `routing.ts` into a transaction the user's own wallet signs, through the same approve, caps, sign, submit and log path as a send. Design points to settle when this is built:
+- Which venues execute first. Stellar DEX path payments are classic operations and the simplest. Aquarius and Soroswap need a contract call and more work, so they may come second. The quote already compares all three.
+- A minimum amount received on every swap, so a price that moves between quote and submit fails instead of filling badly.
+- The market-versus-reference gap (`vsMarketPct`) is shown before approval, with a refusal above a set threshold for naira to dollars at size. Point the user to the dollar anchor cash in when it is the better price.
+- Both trustlines must exist. Caps apply in the currency being sold.
+- Soroswap needs its API key in Production.
+
+Done when: a real $1 swap and a small naira swap both go through, the log shows what was received, and a stale quote is refused.
+
+**M11. Chat approvals on mainnet (D2).** Meet the five conditions above before Stage 3 involves any chat approval.
+
 ## Testing and rollout
 
 | Stage | What | Needs |
@@ -97,12 +126,14 @@ Done when: both complete in staging with the live partner.
 | 0. Automated | Typecheck, lint, tests with the partner and Horizon mocked, `next build`. Every pull request. | Nothing |
 | 1. Mock end to end | Browser check of the mock flow. Done on 15 November: sign-in, limits from the partner, caps refused, cash-out preview. Repeat after each change to those screens. | Nothing |
 | 2. Mainnet, no money | Read-only checks with a throwaway wallet: partner sign-in, order, status, balances, destination checks. | M1, M2 |
-| 3. Mainnet, small real money | $1 stable transfer. A ₦20,000 deposit and a ₦10,000 withdrawal through LINK, timed. A payment link paid from another wallet. Olayinka and Otowo only, their own wallets. | Both agree in chat. M1 to M6 |
-| 4. Allowlist beta | About five known people, low caps, the kill switch tested once on purpose. | LINK's licence answer, D5, M7, M8 |
+| 3. Mainnet, small real money | $1 stable transfer. A ₦20,000 deposit and a ₦10,000 withdrawal through LINK, timed. A payment link paid from another wallet. A $1 swap and a small naira swap. One chat approval, once the D2 conditions are in. Olayinka and Otowo only, their own wallets. | Both agree in chat. M1 to M6 |
+| 4. Allowlist beta | 10 known people, low caps, the kill switch tested once on purpose. | LINK's licence answer, M7, M8, M10, M11 |
 | 5. Wider | More users, higher caps. | D6 |
 
 ## Risks to watch
 
+- **A leaked agent-key secret (D2).** One secret can currently approve payments for every opted-in account, and the only limit is our server caps. The five conditions under D2 are the mitigation. Until they are done, no real money goes through a chat approval.
+- **Swaps lose money at size on the open market.** Naira to dollars is the worst direction. The minimum-received check and the gap warning (M10) are the guard.
 - **LINK could change or stop its anchors.** Both are third-party and uncontracted. The partner interface lets Cowrie (SEP-6) replace it, but only if it offers a hosted identity page.
 - **A stuck withdrawal.** The user's NGNC leaves the wallet before the naira arrives. Reconciliation and a runbook with a LINK contact are the mitigation.
 - **Reserve cost per user (D1).** Recompute at the current XLM price.
