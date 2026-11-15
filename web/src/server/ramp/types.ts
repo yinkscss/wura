@@ -10,7 +10,7 @@ import type { Session } from "../session";
  *     limit checks, signing and log as a send (server/money.ts).
  *   - Identity numbers (NIN, BVN) are never stored or logged. Where the partner
  *     has its own hosted page for the check, that page is used.
- *   - All amounts are minor units (kobo), integers.
+ *   - All amounts are minor units (kobo or cents), integers.
  */
 
 export type RampId = "mock" | "link";
@@ -22,7 +22,14 @@ export type RampBounds = {
   max: number | null;
 };
 
-export type RampLimits = { topUp: RampBounds; cashOut: RampBounds };
+/**
+ * The currency a partner's limits and top-up amounts are in. The mock works in
+ * naira. The live partner works in dollars: the user pays naira on the
+ * partner's page and dollars arrive in the wallet.
+ */
+export type RampCurrency = "NGN" | "USDC";
+
+export type RampLimits = { currency: RampCurrency; topUp: RampBounds; cashOut: RampBounds };
 
 export type RampInfo = {
   provider: RampId;
@@ -39,7 +46,7 @@ export type RampInfo = {
 };
 
 /** A top-up the user completes by bank transfer (mock). */
-export type TopUpOrder = {
+export type MockTopUp = {
   id: string;
   amount: number;
   status: "awaiting_transfer";
@@ -47,6 +54,52 @@ export type TopUpOrder = {
   /** Fictional transfer details. Do not pay these. */
   transfer: { bank: string; accountNumber: string; accountName: string; reference: string };
   expiresAt: number;
+};
+
+/**
+ * A top-up the user finishes on the partner's own page. Nothing has moved yet.
+ * The page collects identity and bank details; Wura never sees them.
+ */
+export type PartnerTopUp = {
+  id: string;
+  amount: number;
+  currency: RampCurrency;
+  status: "open_partner_page";
+  mock: false;
+  /** HTTPS, on the partner's own domain. Open it for the user; never fetch it from the server. */
+  url: string;
+};
+
+export type TopUpOrder = MockTopUp | PartnerTopUp;
+
+/**
+ * The partner wants proof that the user owns this wallet before it starts a
+ * top-up. `hash` is a sign-in challenge that was checked first: it can't move
+ * money (docs/money-side.md). The wallet signs it, and the screen posts
+ * `challenge` and the signature to /api/funding/naira/signin.
+ */
+export type PartnerSignIn = {
+  status: "needs_partner_signin";
+  hash: string;
+  address: string;
+  challenge: string;
+  /** Unix ms. */
+  expiresAt: number;
+};
+
+/** A partner session for one wallet. Only ever sent back to the partner. */
+export type PartnerSession = { token: string; /** Unix ms. */ expiresAt: number };
+
+/** Where a top-up has got to, in Wura's plain states. */
+export type TopUpStatus = {
+  id: string;
+  state: "waiting_for_you" | "processing" | "done" | "failed";
+  currency: RampCurrency;
+  /** What arrived in the wallet, once the partner says. */
+  received: number | null;
+  fee: number | null;
+  /** Stellar transaction hash once the partner has paid. */
+  txRef: string | null;
 };
 
 /** What a cash-out would do. Shown to the user before anything is approved or signed. */
@@ -68,8 +121,15 @@ export interface RampProvider {
   limits(): Promise<RampLimits>;
   /** Only for providers whose identityCheck is "wura_mock". */
   verifyIdentity(s: Session, input: { nin: unknown; consent: unknown }): { kycStatus: "verified" };
-  /** The amount has already been checked against the limits. */
-  startTopUp(s: Session, input: { amount: number }): Promise<TopUpOrder>;
+  /**
+   * The amount has already been checked against the limits. Providers with a
+   * partner sign-in return PartnerSignIn when `partnerToken` is missing or stale.
+   */
+  startTopUp(s: Session, input: { amount: number; partnerToken?: string }): Promise<TopUpOrder | PartnerSignIn>;
+  /** Only for providers with a partner sign-in. Checks the challenge again, then trades it for a session. */
+  finishSignIn?(s: Session, input: { challenge: unknown; signature: unknown }): Promise<PartnerSession>;
+  /** Only for live providers. */
+  topUpStatus?(s: Session, input: { id: string; partnerToken?: string }): Promise<TopUpStatus | PartnerSignIn>;
   /** Never signs. See the boundaries above. */
   previewCashOut(s: Session, input: { amount: number }): Promise<CashOutPreview>;
   /**

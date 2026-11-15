@@ -32,6 +32,7 @@ export const mockRamp: RampProvider = {
 
   async limits() {
     return {
+      currency: "NGN",
       topUp: { enabled: true, min: EXAMPLE_MIN, max: null },
       cashOut: { enabled: true, min: EXAMPLE_MIN, max: null },
     };
