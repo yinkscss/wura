@@ -36,6 +36,8 @@ export function authServerMetadata(req: Request) {
   const base = baseUrl(req);
   return {
     issuer: base,
+    // We return iss (= issuer) on every authorization redirect, so ChatGPT can use its stable redirect URI.
+    authorization_response_iss_parameter_supported: true,
     authorization_endpoint: `${base}/oauth/authorize`,
     token_endpoint: `${base}/oauth/token`,
     registration_endpoint: `${base}/oauth/register`,

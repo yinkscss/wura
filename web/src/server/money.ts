@@ -343,10 +343,10 @@ async function sendFigures(s: Session, w: WalletState, contact: SendIntent["to"]
 /** An approval link rebuilds an expired preview for this long after it was first prepared. */
 const APPROVAL_LINK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const tooOld = (v: { createdAt?: number; expiresAt: number }) => Date.now() - (v.createdAt ?? v.expiresAt) > APPROVAL_LINK_MAX_AGE_MS;
-const APPROVAL_TOO_OLD = "This approval link is more than a day old, so it can't be used any more. Ask Claude to prepare it again.";
+const APPROVAL_TOO_OLD = "This approval link is more than a day old, so it can't be used any more. Ask the chat app to prepare it again.";
 
 const APPROVAL_NOT_FOUND =
-  "We couldn't find this in your Wura. Make sure you're signed in with the same email you used in Claude, or ask Claude to prepare it again.";
+  "We couldn't find this in your Wura. Make sure you're signed in with the same email you connected to your chat app, or ask it to prepare this again.";
 
 /**
  * Opens a preview from an approval link (/approve/<id>). Only the signed-in

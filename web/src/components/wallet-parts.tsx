@@ -7,6 +7,7 @@ import type { Activity } from "@/lib/types";
 import { when } from "@/lib/format";
 import { ChatGPTLogo, ClaudeLogo, TelegramLogo, WhatsAppLogo } from "./brand-icons";
 import { RefreshIcon } from "./icons";
+import { copyText } from "./money-cards";
 import { useOverview } from "./overview";
 import { buttonClass, Card, Pill, cx } from "./ui";
 
@@ -75,7 +76,7 @@ export function ActivityTable({ rows, limit }: { rows: Activity[]; limit?: numbe
 
 const APPS = [
   { name: "Claude", kind: "Same assistant · connector", tile: "bg-[#D97757] text-white", Logo: ClaudeLogo },
-  { name: "ChatGPT", kind: "Same assistant · chat plugin", tile: "bg-[#10A37F] text-white", Logo: ChatGPTLogo },
+  { name: "ChatGPT", kind: "Same assistant · connector", tile: "bg-[#10A37F] text-white", Logo: ChatGPTLogo },
   { name: "Telegram", kind: "Same assistant · bot", tile: "bg-[#26A5E4] text-white", Logo: TelegramLogo },
   { name: "WhatsApp", kind: "Same assistant · bot", tile: "bg-[#25D366] text-white", Logo: WhatsAppLogo },
 ];
@@ -89,33 +90,57 @@ function addToClaudeUrl(origin: string) {
   })}`;
 }
 
+/** ChatGPT has no prefill link: this page is where a custom MCP server is added (OpenAI docs, Nov 2026). */
+const CHATGPT_PLUGINS_URL = "https://chatgpt.com/plugins";
+
+const isHost = (host: string, domains: string[]) => domains.some((d) => host === d || host.endsWith(`.${d}`));
+
 /**
- * Brand marks label each app. Claude shows "Add to Claude" until this user has
- * connected it (an OAuth grant from claude.ai), then "Live". Telegram shows
- * "Live" when this server has the bot set up.
+ * Brand marks label each app. Claude and ChatGPT show an add button until
+ * this user has connected them (an OAuth grant whose redirect is on
+ * claude.ai/claude.com or chatgpt.com), then "Live". Telegram shows "Live"
+ * when this server has the bot set up.
  */
 export function ConnectedApps({ big = false }: { big?: boolean }) {
   const [telegramOn, setTelegramOn] = useState(false);
-  const [claude, setClaude] = useState<{ connected: boolean; addUrl: string } | null>(null);
+  const [conn, setConn] = useState<{ claude: boolean; chatgpt: boolean; origin: string } | null>(null);
+  const [chatgptHint, setChatgptHint] = useState<string | null>(null);
   useEffect(() => {
     api<{ enabled: boolean }>("/api/telegram/link")
       .then((s) => setTelegramOn(s.enabled))
       .catch(() => {});
-    api<{ name: string; redirectHost: string }[]>("/api/connected-apps")
-      .then((apps) => apps.some((a) => /claude/i.test(a.name) || /(^|\.)claude\.(ai|com)$/.test(a.redirectHost)))
-      .catch(() => false)
-      .then((connected) => setClaude({ connected, addUrl: addToClaudeUrl(window.location.origin) }));
+    api<{ redirectHost: string }[]>("/api/connected-apps")
+      .catch(() => [] as { redirectHost: string }[])
+      .then((apps) =>
+        setConn({
+          claude: apps.some((a) => isHost(a.redirectHost, ["claude.ai", "claude.com"])),
+          chatgpt: apps.some((a) => isHost(a.redirectHost, ["chatgpt.com"])),
+          origin: window.location.origin,
+        }),
+      );
   }, []);
 
+  async function addToChatGPT(origin: string) {
+    const url = `${origin}/mcp`;
+    const copied = await copyText(url);
+    window.open(CHATGPT_PLUGINS_URL, "_blank", "noopener,noreferrer");
+    setChatgptHint(
+      `${copied ? "Wura’s URL is copied." : `Copy ${url}.`} In ChatGPT, tap + → Add custom MCP server, paste it and choose OAuth. Your ChatGPT plan has to allow custom MCP servers.`,
+    );
+  }
+
   function status(name: string) {
-    if (name === "Claude") {
-      if (!claude) return null;
-      return claude.connected ? (
-        <Pill tone="pink">Live</Pill>
-      ) : (
-        <a href={claude.addUrl} target="_blank" rel="noopener noreferrer" className={buttonClass("blue", "sm", "shrink-0")}>
+    if (name === "Claude" || name === "ChatGPT") {
+      if (!conn) return null;
+      if (name === "Claude" ? conn.claude : conn.chatgpt) return <Pill tone="pink">Live</Pill>;
+      return name === "Claude" ? (
+        <a href={addToClaudeUrl(conn.origin)} target="_blank" rel="noopener noreferrer" className={buttonClass("blue", "sm", "shrink-0")}>
           Add to Claude
         </a>
+      ) : (
+        <button type="button" onClick={() => addToChatGPT(conn.origin)} className={buttonClass("blue", "sm", "shrink-0")}>
+          Add to ChatGPT
+        </button>
       );
     }
     if (name === "Telegram" && telegramOn) return <Pill tone="pink">Live</Pill>;
@@ -125,15 +150,20 @@ export function ConnectedApps({ big = false }: { big?: boolean }) {
   return (
     <div className="flex flex-col gap-3">
       {APPS.map((a) => (
-        <div key={a.name} className={cx("flex items-center gap-4 rounded-2xl bg-mist", big ? "p-4" : "px-3.5 py-3")}>
-          <span className={cx("grid size-11 shrink-0 place-items-center rounded-xl", a.tile)}>
-            <a.Logo size={22} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-[15.5px] font-bold tracking-[-0.02em]">{a.name}</div>
-            <div className="truncate text-[13px] text-muted">{a.kind}</div>
+        <div key={a.name} className={cx("rounded-2xl bg-mist", big ? "p-4" : "px-3.5 py-3")}>
+          <div className="flex items-center gap-4">
+            <span className={cx("grid size-11 shrink-0 place-items-center rounded-xl", a.tile)}>
+              <a.Logo size={22} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[15.5px] font-bold tracking-[-0.02em]">{a.name}</div>
+              <div className="truncate text-[13px] text-muted">{a.kind}</div>
+            </div>
+            {status(a.name)}
           </div>
-          {status(a.name)}
+          {a.name === "ChatGPT" && chatgptHint && !conn?.chatgpt && (
+            <p className="mt-3 break-words text-[13px] leading-snug text-muted">{chatgptHint}</p>
+          )}
         </div>
       ))}
     </div>

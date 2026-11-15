@@ -137,6 +137,8 @@ export type AuthorizeRequest = {
   codeChallenge: string;
   scopes: Scope[];
   resource: string;
+  /** Our issuer (= metadata `issuer`), returned as `iss` on every redirect (RFC 9207). */
+  issuer: string;
 };
 
 /**
@@ -157,7 +159,7 @@ export async function checkAuthorize(params: URLSearchParams, base: string): Pro
   }
   const resource = params.get("resource") || resourceFor(base);
   if (resource.replace(/\/+$/, "") !== resourceFor(base)) throw new OAuthError("invalid_target", "Tokens can only be issued for this Wura server.");
-  return { client, redirectUri, state: params.get("state") || "", codeChallenge, scopes: parseScopes(params.get("scope")), resource: resourceFor(base) };
+  return { client, redirectUri, state: params.get("state") || "", codeChallenge, scopes: parseScopes(params.get("scope")), resource: resourceFor(base), issuer: base };
 }
 
 /** The user said yes on the consent page: issue a single-use code. */
@@ -174,6 +176,7 @@ export async function issueCode(userId: string, a: AuthorizeRequest) {
   const url = new URL(a.redirectUri);
   url.searchParams.set("code", code);
   if (a.state) url.searchParams.set("state", a.state);
+  url.searchParams.set("iss", a.issuer);
   return url.toString();
 }
 
@@ -181,6 +184,7 @@ export function denyRedirect(a: AuthorizeRequest) {
   const url = new URL(a.redirectUri);
   url.searchParams.set("error", "access_denied");
   if (a.state) url.searchParams.set("state", a.state);
+  url.searchParams.set("iss", a.issuer);
   return url.toString();
 }
 
