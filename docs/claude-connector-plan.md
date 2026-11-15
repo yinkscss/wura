@@ -124,6 +124,11 @@ Reuse `TOOLS` and `runTool` from `tools.ts`. Each tool gets a `title` and an hon
    - The card shows "Open in Wura" when chat approvals are off, when the preview has expired, or after a refusal.
 5. **ChatGPT.** Add the same `/mcp` as a custom MCP server in ChatGPT. Add CIMD if ChatGPT needs it beyond DCR. Publishing to ChatGPT's app directory needs organization verification and a privacy policy; that's a separate decision.
 
+   - **Built (15 Nov):** ChatGPT adds the same `/mcp` from chatgpt.com/plugins (+ → Add custom MCP server, OAuth). We use DCR; CIMD isn't advertised yet.
+   - The authorize redirects now return `iss` (RFC 9207), and the metadata advertises `authorization_response_iss_parameter_supported`, so ChatGPT can use its stable redirect URI. Both ChatGPT redirect forms are allowed.
+   - ChatGPT stays **link-only**: no card, no code, no `approve_send`. That holds until a spike shows ChatGPT keeps `_meta` and app-only tools away from its model.
+   - On Channels, the row shows **Add to ChatGPT** until connected, then Live. The button copies the URL, opens ChatGPT and shows a one-line hint, since ChatGPT has no prefill link. Connections are recognised by redirect host, not by client name.
+   - `/approve` copy no longer names Claude.
 ## Tests
 
 - **Script (SDK client, mock mode):**

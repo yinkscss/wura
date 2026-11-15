@@ -135,7 +135,7 @@ export function Approve({ params }: { params: Promise<{ id: string }> }) {
       </Card>
       {(state === "done" || state === "cancelled") && (
         <p className="text-center text-[14px] text-muted">
-          {state === "done" ? "You can go back to Claude and ask “did it go through?”." : "Cancelled. Nothing was sent. You can close this page."}
+          {state === "done" ? "You can go back to your chat and ask “did it go through?”." : "Cancelled. Nothing was sent. You can close this page."}
         </p>
       )}
     </div>
