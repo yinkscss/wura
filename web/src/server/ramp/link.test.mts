@@ -81,8 +81,8 @@ const fails = (code: string, message: RegExp) => (err: unknown) => {
 
 test("info offers both choices, naira first, with the trial caps applied", async () => {
   world();
-  const naira = { currency: "NGN", topUp: { enabled: true, min: 20_000_00, max: 50_000_00 }, cashOut: { enabled: true, min: 10_000_00, max: 5_000_000_00 } };
-  const dollars = { currency: "USDC", topUp: { enabled: true, min: 10_00, max: 30_00 }, cashOut: { enabled: true, min: 10_00, max: 100_000_00 } };
+  const naira = { currency: "NGN", topUp: { enabled: true, min: 20_000_00, max: 50_000_00 }, cashOut: { enabled: true, min: 10_000_00, max: 75_000_00 } };
+  const dollars = { currency: "USDC", topUp: { enabled: true, min: 10_00, max: 30_00 }, cashOut: { enabled: true, min: 10_00, max: 50_00 } };
   assert.deepEqual(await rampInfo(), { provider: "link", live: true, identityCheck: "partner_page", limits: naira, options: [naira, dollars] });
 });
 

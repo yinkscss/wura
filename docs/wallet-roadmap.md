@@ -44,7 +44,7 @@ The building blocks:
 ## Hard problems to solve first
 
 1. **Money in from exchanges and ramps.** Exchanges and anchors send classic payments, which can only reach `G…` addresses. Most can't pay a `C…` wallet yet. A protocol-level fix is only at the proposal stage. The workaround is a Wura deposit address (one `G…` account with a memo per user) that forwards each deposit straight into the user's wallet. That means Wura briefly holds funds in transit, which needs legal advice first.
-2. **Money out to exchanges and ramps.** A smart wallet can't attach a memo. The fix is a muxed (`M…`) address carrying the exchange's account and memo. Since Protocol 23 the payment event includes that ID, but the receiver has to read it. Check each off-ramp. Paycrest doesn't list Stellar at all, so naira out needs its own plan either way.
+2. **Money out to exchanges and ramps.** A smart wallet can't attach a memo. The fix is a muxed (`M…`) address carrying the exchange's account and memo. Since Protocol 23 the payment event includes that ID, but the receiver has to read it. Check each off-ramp. LINK is the first naira partner; whether it pays to muxed addresses is not known yet.
 3. **Passkeys in chat apps.** Passkeys often fail inside Telegram's and WhatsApp's built-in browsers. Chat payments use the capped agent key instead. Anything that needs the passkey (setup, raising limits, large payments) opens Wura in the phone's real browser.
 4. **Lost phone.** Synced passkeys (iCloud Keychain, Google Password Manager) survive most phone changes. For the rest, prompt for a second passkey on another device and add a recovery signer that can only add a new passkey after a waiting period. Email alone must never be enough to take over a wallet.
 5. **The domain is permanent.** A passkey only works on the domain it was created for. Choose Wura's final domain before the first real wallet is created.
@@ -54,7 +54,7 @@ The building blocks:
 ## Migration path
 
 1. **Buildathon:** Privy, classic `G…` address, caps enforced on Wura's server. Already the plan.
-2. **Spike (2 days, after the buildathon):** on testnet, create a passkey wallet with Smart Account Kit through the managed relayer, add an agent rule with a spending limit, and confirm the contract pays $20 but refuses $60. Test the Telegram → real-browser handoff on iPhone and Android, and ask Paycrest and one Nigerian exchange whether they can pay to and from `C…` or muxed addresses.
+2. **Spike (2 days, after the buildathon):** on testnet, create a passkey wallet with Smart Account Kit through the managed relayer, add an agent rule with a spending limit, and confirm the contract pays $20 but refuses $60. Test the Telegram → real-browser handoff on iPhone and Android, and ask LINK and one Nigerian exchange whether they can pay to and from `C…` or muxed addresses.
 3. **New users on the passkey wallet**, if the spike passes and the ramp question has an answer. Keep Privy for existing users.
 4. **Offer existing users a move:** create a passkey wallet, then transfer funds from their Privy `G…` address with one approved payment.
 
