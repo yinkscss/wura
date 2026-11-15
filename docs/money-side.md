@@ -21,7 +21,7 @@ Everything else stays with Olayinka unless agreed here: the web app screens, lan
 
 | Area | Files | Owner |
 | --- | --- | --- |
-| Naira partner and identity check | `web/src/server/paycrest.ts`, `web/src/app/api/funding/**`, new files under `web/src/server/ramp/` | Samuel |
+| Naira partner and identity check | `web/src/app/api/funding/**`, `web/src/server/ramp/` | Samuel |
 | Money docs | `docs/kyc-and-funding.md`, this file | Samuel |
 | Quotes and venue comparison | `web/src/server/routing.ts`, `docs/routing.md` | Olayinka. The naira partner exposes a `quote()` and routing calls it as one more venue. |
 | Sends, swaps, limits, log | `web/src/server/money.ts`, `testnet.ts`, `signer.ts`, `stellar.ts` | Olayinka |
@@ -60,7 +60,7 @@ Everything else stays with Olayinka unless agreed here: the web app screens, lan
 
 Checked against live endpoints on 13 November 2026. Rates move; rerun before relying on them.
 
-**Paycrest does not settle on Stellar.** `paycrest.ts` already notes this. A live naira flow through Paycrest needs a bridge from another chain, or a different partner.
+**Paycrest does not settle on Stellar.** A live naira flow through it would need a bridge from another chain, or a different partner. Its old code has been removed.
 
 **A Stellar naira anchor is live: LINK, which issues NGNC.**
 
@@ -117,7 +117,7 @@ What `RAMP_PROVIDER=link` does now:
 
 | Route | What it does |
 | --- | --- |
-| `POST /api/funding/naira/cashout` `{ amount, from? }` | `from` is what leaves the wallet (`NGN` or `USDC`); the bank account always receives naira. Checks the partner's limits and the wallet's real mainnet balance, then answers `needs_partner_signin` or `{ status: "open_partner_page", url, id }`. The user enters the bank account on the partner's page. Nothing moves. |
+| `POST /api/funding/naira/cashout` `{ amount, from? }` | `from` is what leaves the wallet (`NGN` or `USDC`); the bank account always receives naira. With the mock it answers an example preview in kobo (amount, fee, what reaches the bank, expiry). With the live partner it checks the partner's limits, Wura's per-payment and daily caps (`checkLimits`) and the wallet's real mainnet balance, then answers `needs_partner_signin` or `{ status: "open_partner_page", url, id }`. The user enters the bank account on the partner's page. Nothing moves. |
 | `GET /api/funding/naira/cashout?id=&from=` | `waiting_for_you`, `processing`, `done` or `failed`, plus `send` (what the wallet must send), `fee`, and `readyToPay`. |
 
 The last step is the wallet paying the partner. That is a money move, so it is **not** in the naira code and has no route. When `readyToPay` is true, `cashOutPayment(s, { id, from, partnerToken })` in `web/src/server/ramp/index.ts` returns the exact payment: `{ network: "mainnet", asset, amount, destination, memo, memoType }`. It refuses a destination that is not a valid address or is the user's own wallet, an empty memo, and an amount outside the partner's limits. `money.ts` (Olayinka's) takes it from there: show it, `approve: true`, caps, build, sign, submit, log. **That hook is not built**, so a cash-out stops at "the partner is ready to be paid".
@@ -152,5 +152,5 @@ Steps 3 to 6 are for after the application goes in on 21 November. The demo keep
 ## Decided
 
 - The build uses both LINK anchors. Naira in, naira stays naira: the NGNC one. Naira in, dollars out: the dollar one (anchor.linkio.world), so there is no swap.
-- LINK is the first partner to pursue. Paycrest stays parked because it does not settle on Stellar. The concept and KYC docs still say Paycrest and have not been changed yet.
+- LINK is the first partner to pursue. Paycrest is parked because it does not settle on Stellar. The concept, KYC, open-questions and application docs now say LINK.
 - `routing.ts` stays with Olayinka.

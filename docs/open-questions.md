@@ -2,11 +2,11 @@
 
 These are things still to confirm before, or while, building. None of them are decided.
 
-## Paycrest verification reuse
+## Naira partner verification reuse
 
-Paycrest requires a NIN on each order. The planned naira flow is: verify once, store a verified status, and do not ask again.
+The naira partner is LINK. The planned naira flow is: verify once, and do not ask again.
 
-It is not confirmed that Paycrest allows a verification to be reused across later orders. This needs to be checked in Paycrest's documentation and, if the docs do not say, with Paycrest.
+It is not confirmed that LINK reuses a verification across later top-ups, and its licence status is unknown. Both are questions to send to LINK (not sent yet).
 
 Until that answer is in, the product should not promise a one-time NIN, and the USDC path should remain the way to start with no ID.
 
@@ -32,4 +32,4 @@ The approach is decided and written up in [Site connect](site-connect.md): allow
 
 ## Wallet after the buildathon
 
-The buildathon uses Privy. The plan afterwards is Wura's own passkey smart wallet, written up in [Wallet roadmap](wallet-roadmap.md). Still open: whether exchanges and Paycrest can pay to and from `C…` smart-wallet addresses, how recovery works for a lost phone, and Wura's final domain (passkeys are tied to it).
+The buildathon uses Privy. The plan afterwards is Wura's own passkey smart wallet, written up in [Wallet roadmap](wallet-roadmap.md). Still open: whether exchanges and the naira partner can pay to and from `C…` smart-wallet addresses, how recovery works for a lost phone, and Wura's final domain (passkeys are tied to it).

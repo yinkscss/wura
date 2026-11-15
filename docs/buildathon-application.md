@@ -126,7 +126,7 @@ Stellar is the settlement and routing layer, not a bolt-on. Users hold USDC (and
 - Swaps naira and USDC, sends payments, and creates payment links on Stellar, only after the user approves the preview.
 - Records each result in a transaction log, and refuses any request that would go over a per-payment or daily limit.
 
-Naira funding would use Paycrest for on-ramping. USDC funding needs no identity check. For naira, the plan is a one-time identity check, with reuse only if Paycrest allows it; if that is not confirmed in time, the demo will say so and keep the USDC path as the no-ID start.
+Naira funding would use LINK, a Stellar anchor, for on-ramping. USDC funding needs no identity check. For naira, the plan is a one-time identity check, with reuse only if LINK allows it; if that is not confirmed in time, the demo will say so and keep the USDC path as the no-ID start.
 
 ### 17. Which Stellar features do you plan to integrate? *(required, checkboxes; last option is Other)*
 

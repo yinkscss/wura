@@ -1,7 +1,9 @@
 import "server-only";
 import { naira, usdcNumber } from "@/lib/format";
 import { ApiFailure } from "../errors";
+import { checkLimits, EXAMPLE_LIMITS } from "../money";
 import type { Session } from "../session";
+import { wallet } from "../store";
 import { linkRamp } from "./link";
 import { mockRamp } from "./mock";
 import type { RampBounds, RampCurrency, RampInfo, RampProvider } from "./types";
@@ -34,7 +36,12 @@ export async function rampInfo(): Promise<RampInfo> {
   const options = await Promise.all(
     p.receives.map(async (r) => {
       const l = await p.limits(r);
-      return { currency: r, topUp: capped(l.topUp, EXAMPLE_TRIAL_TOPUP_CAP[r]), cashOut: l.cashOut };
+      return {
+        currency: r,
+        topUp: capped(l.topUp, EXAMPLE_TRIAL_TOPUP_CAP[r]),
+        // A cash-out is a money move: it never exceeds the per-payment cap of a send.
+        cashOut: capped(l.cashOut, EXAMPLE_LIMITS.perPayment[r]),
+      };
     }),
   );
   return { provider: p.id, live: p.live, identityCheck: p.identityCheck, limits: options[0], options };
@@ -84,18 +91,9 @@ export async function startTopUp(s: Session, input: { amount: number; receive: R
  */
 export async function startCashOut(s: Session, input: { amount: number; from: RampCurrency; partnerToken?: string }) {
   const p = ramp();
-  const limits = (await rampInfo()).options.find((o) => o.currency === input.from);
-  if (!limits) throw new ApiFailure("BAD_REQUEST", "That cash-out choice isn't available.");
-  const { enabled, min, max } = limits.cashOut;
-  const amount = input.amount;
-  if (!enabled) throw new ApiFailure("BAD_REQUEST", "Naira cash-outs aren't available right now.", 409);
-  if (!Number.isInteger(amount) || amount <= 0 || (min !== null && amount < min)) {
-    throw new ApiFailure("BAD_REQUEST", `The smallest cash-out is ${show(min ?? 1, limits.currency)}.`);
-  }
-  if (max !== null && amount > max) {
-    throw new ApiFailure("BAD_REQUEST", `The largest cash-out is ${show(max, limits.currency)}.`);
-  }
-  if (!p.startCashOut) return p.previewCashOut(s, { amount });
+  // The mock has no partner page: it answers the example preview.
+  if (!p.startCashOut) return previewCashOut(s, { amount: input.amount });
+  const amount = checkCashOut(s, await cashOutLimits(input.from), input.amount);
   return p.startCashOut(s, { amount, from: input.from, partnerToken: input.partnerToken });
 }
 
@@ -136,4 +134,36 @@ export async function topUpStatus(s: Session, input: { id: string; receive: Ramp
   if (!p.topUpStatus) noPartnerSignIn();
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(input.id)) throw new ApiFailure("BAD_REQUEST", "That top-up wasn't found.", 404);
   return p.topUpStatus(s, input);
+}
+
+/**
+ * What a cash-out to a bank account would do. Preview only: nothing is signed,
+ * sent or logged here. The payment itself goes through the same approval,
+ * limit checks, signing and log as a send (server/money.ts). The naira caps
+ * are checked here too, so the screen never shows a preview that would be refused later.
+ */
+async function cashOutLimits(from: RampCurrency) {
+  const limits = (await rampInfo()).options.find((o) => o.currency === from);
+  if (!limits) throw new ApiFailure("BAD_REQUEST", "That cash-out choice isn't available.", 409);
+  return limits;
+}
+
+/** The partner's limits, Wura's per-payment cap and the daily cap, for the mock and the live partner alike. */
+function checkCashOut(s: Session, limits: RampInfo["limits"], amount: number) {
+  const { enabled, min, max } = limits.cashOut;
+  const naira = limits.currency === "NGN";
+  if (!enabled) throw new ApiFailure("BAD_REQUEST", "Naira cash-outs aren't available right now.", 409);
+  if (!Number.isInteger(amount) || amount <= 0 || (min !== null && amount < min)) {
+    throw new ApiFailure("BAD_REQUEST", `The smallest ${naira ? "naira " : ""}cash-out is ${show(min ?? 1, limits.currency)}.`);
+  }
+  if (max !== null && amount > max) {
+    throw new ApiFailure("TRIAL_LIMIT", `Each cash-out is capped at ${show(max, limits.currency)}.`, 403);
+  }
+  checkLimits(wallet(s.userId), limits.currency, amount);
+  return amount;
+}
+
+export async function previewCashOut(s: Session, input: { amount: number }) {
+  const amount = checkCashOut(s, await cashOutLimits("NGN"), input.amount);
+  return ramp().previewCashOut(s, { amount });
 }

@@ -38,7 +38,7 @@ A judge or reviewer should be able to follow this path:
 5. Approve.
 6. Watch the agent swap and pay, then see the result in the log.
 
-If Paycrest will not reuse a verification in time for the demo, say that honestly and keep the USDC path as the path that needs no ID. Do not show a one-time naira check the product cannot actually honour.
+If the naira partner will not reuse a verification in time for the demo, say that honestly and keep the USDC path as the path that needs no ID. Do not show a one-time naira check the product cannot actually honour.
 
 ## Why this, and not GoodBuildit, for Stellar
 

@@ -81,8 +81,8 @@ const fails = (code: string, message: RegExp) => (err: unknown) => {
 
 test("info offers both choices, naira first, with the trial caps applied", async () => {
   world();
-  const naira = { currency: "NGN", topUp: { enabled: true, min: 20_000_00, max: 50_000_00 }, cashOut: { enabled: true, min: 10_000_00, max: 5_000_000_00 } };
-  const dollars = { currency: "USDC", topUp: { enabled: true, min: 10_00, max: 30_00 }, cashOut: { enabled: true, min: 10_00, max: 100_000_00 } };
+  const naira = { currency: "NGN", topUp: { enabled: true, min: 20_000_00, max: 50_000_00 }, cashOut: { enabled: true, min: 10_000_00, max: 75_000_00 } };
+  const dollars = { currency: "USDC", topUp: { enabled: true, min: 10_00, max: 30_00 }, cashOut: { enabled: true, min: 10_00, max: 50_00 } };
   assert.deepEqual(await rampInfo(), { provider: "link", live: true, identityCheck: "partner_page", limits: naira, options: [naira, dollars] });
 });
 
@@ -202,7 +202,7 @@ const ready = { status: "pending_user_transfer_start", amount_in: "25.00", amoun
 test("a cash-out is checked against the limits and the wallet's real balance before the partner is asked", async () => {
   world({ balance: "24.9999999" });
   await assert.rejects(startCashOut(s, { amount: 9_99, from: R }), fails("BAD_REQUEST", /smallest cash-out is \$10\.00/));
-  await assert.rejects(startCashOut(s, { amount: 100_000_01, from: R }), fails("BAD_REQUEST", /largest cash-out is \$100,000\.00/));
+  await assert.rejects(startCashOut(s, { amount: 50_01, from: R }), fails("TRIAL_LIMIT", /capped at \$50\.00/));
   await assert.rejects(startCashOut(s, { amount: 25_00, from: R, partnerToken: jwt(s.address) }), fails("INSUFFICIENT_BALANCE", /don't have enough/));
   world({ account: "missing" });
   await assert.rejects(startCashOut(s, { amount: 25_00, from: R, partnerToken: jwt(s.address) }), fails("SIGNING_UNAVAILABLE", /isn't set up to hold dollars/));
