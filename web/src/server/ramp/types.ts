@@ -106,6 +106,50 @@ export type TopUpStatus = {
   txRef: string | null;
 };
 
+/**
+ * A cash-out the user continues on the partner's own page, where they enter
+ * the bank account. Nothing has moved yet.
+ */
+export type PartnerCashOut = Omit<PartnerTopUp, "currency"> & {
+  /** What leaves the wallet: naira ("NGN") or dollars ("USDC"). The bank account always receives naira. */
+  currency: RampCurrency;
+};
+
+/** Where a cash-out has got to. */
+export type CashOutStatus = {
+  id: string;
+  state: "waiting_for_you" | "processing" | "done" | "failed";
+  currency: RampCurrency;
+  /** What the wallet has to send, once the partner says. Minor units of `currency`. */
+  send: number | null;
+  fee: number | null;
+  /**
+   * True once the partner is waiting for the wallet's payment. The payment is
+   * a money move: it needs the user's approval and goes through the limit
+   * checks and the log like a send. The screen can't make it from here.
+   */
+  readyToPay: boolean;
+  /** Stellar transaction hash once the partner has seen the payment. */
+  txRef: string | null;
+};
+
+/**
+ * Exactly what the wallet must send to finish a cash-out. Server-side only,
+ * for the money code (server/money.ts) to show, get approved, limit-check,
+ * build and sign. Nothing in this folder signs it.
+ */
+export type CashOutPayment = {
+  id: string;
+  network: "mainnet";
+  currency: RampCurrency;
+  asset: { code: string; issuer: string };
+  /** Minor units of `currency`. */
+  amount: number;
+  destination: string;
+  memo: string;
+  memoType: "text" | "id" | "hash";
+};
+
 /** What a cash-out would do. Shown to the user before anything is approved or signed. */
 export type CashOutPreview = {
   id: string;
@@ -136,7 +180,15 @@ export interface RampProvider {
   finishSignIn?(s: Session, input: { receive: RampCurrency; challenge: unknown; signature: unknown }): Promise<PartnerSession>;
   /** Only for live providers. */
   topUpStatus?(s: Session, input: { id: string; receive: RampCurrency; partnerToken?: string }): Promise<TopUpStatus | PartnerSignIn>;
-  /** Never signs. See the boundaries above. */
+  /**
+   * Only for live providers. Opens the partner's page for a cash-out. `amount`
+   * has already been checked against the limits. Never signs.
+   */
+  startCashOut?(s: Session, input: { amount: number; from: RampCurrency; partnerToken?: string }): Promise<PartnerCashOut | PartnerSignIn>;
+  cashOutStatus?(s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }): Promise<CashOutStatus | PartnerSignIn>;
+  /** For the money code only. null until the partner is ready to be paid. Never signs. */
+  cashOutPayment?(s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }): Promise<CashOutPayment | null>;
+  /** Mock only. Never signs. See the boundaries above. */
   previewCashOut(s: Session, input: { amount: number }): Promise<CashOutPreview>;
   /**
    * A naira ↔ USDC price from the partner, for routing to compare as one more
