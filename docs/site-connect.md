@@ -55,4 +55,4 @@ These figures are rough estimates from earlier discussion, not verified quotes c
 - **WalletConnect (Reown) and Stellar Wallets Kit.** Reown’s relay service has a free tier that should cover early use. Stellar Wallets Kit is open source and free.
 - **Hosted browser (later).** A hosted browser service in the Browserbase or Browserless style is often around $20 to $100 a month for light use, then billed per browser-hour, plus AI cost for each step that has to read the page. This is the expensive option, which is one reason it stays post-buildathon.
 
-Costs the product would have anyway — model use for ordinary chat, Stellar network fees, and whatever Paycrest charges for naira on-ramps — are not unique to this skill.
+Costs the product would have anyway — model use for ordinary chat, Stellar network fees, and whatever the naira partner charges for naira on-ramps — are not unique to this skill.

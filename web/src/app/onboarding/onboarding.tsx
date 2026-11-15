@@ -8,6 +8,7 @@ import { naira } from "@/lib/format";
 import { BackIcon, BankIcon, ChatIcon, CheckIcon, CopyIcon, IdIcon, WalletIcon } from "@/components/icons";
 import { copyText } from "@/components/money-cards";
 import { Starfield } from "@/components/starfield";
+import type { RampInfo } from "@/server/ramp/types";
 import { Button, ButtonLink, Card, Pill, Wordmark, buttonClass, cx } from "@/components/ui";
 
 type View = "choose" | "usdc" | "naira-verify" | "naira-amount" | "naira-transfer" | "done";
@@ -18,12 +19,22 @@ type Order = {
   transfer: { bank: string; accountNumber: string; accountName: string; reference: string };
 };
 
+/** Only the mock answers with bank details to pay. A live partner answers with a sign-in or a page to open. */
+function isMockOrder(o: unknown): o is Order {
+  return typeof o === "object" && o !== null && "transfer" in o && typeof (o as Order).transfer?.accountNumber === "string";
+}
+
 const ease = [0.22, 1, 0.36, 1] as const;
 
 export function Onboarding() {
   const [view, setView] = useState<View>("choose");
   const [doneVia, setDoneVia] = useState<"usdc" | "naira">("usdc");
   const [order, setOrder] = useState<Order | null>(null);
+  // Limits and the identity-check mode come from the naira partner, not from this file.
+  const [ramp, setRamp] = useState<RampInfo | null>(null);
+  useEffect(() => {
+    api<RampInfo>("/api/funding/naira/info").then(setRamp, () => setRamp(null));
+  }, []);
 
   const step = view === "choose" ? 1 : view === "done" ? 3 : 2;
   const label =
@@ -88,7 +99,7 @@ export function Onboarding() {
                   title="Fund with naira"
                   body="Top up by bank transfer. You’ll verify your ID before the first naira deposit."
                   points={["Bank transfer on-ramp", "Identity check before the first naira top-up", "Small trial limits while this is new"]}
-                  action={<Button variant="blue" size="lg" className="w-full" onClick={() => setView("naira-verify")}>Continue with naira</Button>}
+                  action={<Button variant="blue" size="lg" className="w-full" onClick={() => setView(ramp?.identityCheck === "partner_page" ? "naira-amount" : "naira-verify")}>Continue with naira</Button>}
                   delay={0.12}
                 />
               </div>
@@ -116,6 +127,7 @@ export function Onboarding() {
           {view === "naira-amount" && (
             <Panel key="na">
               <NairaAmount
+                ramp={ramp}
                 onBack={() => setView("choose")}
                 onOrder={(o) => {
                   setOrder(o);
@@ -349,20 +361,32 @@ function NairaVerify({ onBack, onVerified }: { onBack: () => void; onVerified: (
   );
 }
 
-const TRIAL_CAP = 50_000_00;
+const QUICK_AMOUNTS = [5_000, 10_000, 20_000, 50_000];
 
-function NairaAmount({ onBack, onOrder }: { onBack: () => void; onOrder: (o: Order) => void }) {
-  const [amount, setAmount] = useState("20,000");
+function NairaAmount({ ramp, onBack, onOrder }: { ramp: RampInfo | null; onBack: () => void; onOrder: (o: Order) => void }) {
+  const { min, max } = ramp?.limits.topUp ?? { min: null, max: null };
+  const quick = QUICK_AMOUNTS.filter((v) => (min === null || v * 100 >= min) && (max === null || v * 100 <= max));
+  const [amount, setAmount] = useState("");
+  const [touched, setTouched] = useState(false);
+  // Start on the partner's minimum (or the first quick amount) until the user types.
+  const start = min !== null ? Math.ceil(min / 100) : quick[0];
+  const shown = touched ? amount : start ? start.toLocaleString("en-NG") : "";
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const minor = Math.round(Number(amount.replace(/[^\d.]/g, "")) * 100) || 0;
+  const minor = Math.round(Number(shown.replace(/[^\d.]/g, "")) * 100) || 0;
+  const outOfRange = (min !== null && minor < min) || (max !== null && minor > max);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
     setBusy(true);
     try {
-      onOrder(await api<Order>("/api/funding/naira/order", { amount: minor }));
+      const o = await api<unknown>("/api/funding/naira/order", { amount: minor });
+      if (!isMockOrder(o)) {
+        setErr("Naira top-ups through the partner's own page aren't switched on in this screen yet. Nothing was charged.");
+        return;
+      }
+      onOrder(o);
     } catch (e) {
       setErr(e instanceof ClientApiError ? e.message : "Couldn't start the top-up. Try again.");
     } finally {
@@ -372,13 +396,17 @@ function NairaAmount({ onBack, onOrder }: { onBack: () => void; onOrder: (o: Ord
 
   return (
     <div className="mx-auto max-w-[620px]">
-      <Headline title="How much naira?">You’re verified. While naira top-ups are new, each one has a small trial cap.</Headline>
+      <Headline title="How much naira?">
+        {ramp?.identityCheck === "partner_page" ? "The partner checks your identity on its own page." : "You’re verified."} While naira top-ups are new, each one has a small trial cap.
+      </Headline>
       <Card className="mt-10 rounded-card-lg p-7 text-blue shadow-deep sm:p-9">
         <form onSubmit={submit} className="flex flex-col gap-5">
           <BackLink onClick={onBack} />
-          <div className="flex items-center gap-2 text-[13px] font-semibold text-pink-deep">
-            <CheckIcon size={15} /> Identity check passed
-          </div>
+          {ramp?.identityCheck !== "partner_page" && (
+            <div className="flex items-center gap-2 text-[13px] font-semibold text-pink-deep">
+              <CheckIcon size={15} /> Identity check passed
+            </div>
+          )}
           <label className="flex flex-col gap-2">
             <span className="text-[13px] font-semibold">Amount</span>
             <div className="flex h-16 items-center rounded-2xl bg-mist px-5 focus-within:bg-white focus-within:shadow-[inset_0_0_0_1.5px_var(--color-pink)]">
@@ -386,8 +414,9 @@ function NairaAmount({ onBack, onOrder }: { onBack: () => void; onOrder: (o: Ord
               <input
                 id="amount"
                 inputMode="numeric"
-                value={amount}
+                value={shown}
                 onChange={(e) => {
+                  setTouched(true);
                   const d = e.target.value.replace(/\D/g, "").slice(0, 9);
                   setAmount(d ? Number(d).toLocaleString("en-NG") : "");
                 }}
@@ -396,20 +425,33 @@ function NairaAmount({ onBack, onOrder }: { onBack: () => void; onOrder: (o: Ord
             </div>
           </label>
           <div className="flex flex-wrap gap-2">
-            {[5_000, 10_000, 20_000, 50_000].map((v) => (
+            {quick.map((v) => (
               <button
                 type="button"
                 key={v}
-                onClick={() => setAmount(v.toLocaleString("en-NG"))}
+                onClick={() => {
+                  setTouched(true);
+                  setAmount(v.toLocaleString("en-NG"));
+                }}
                 className="rounded-full bg-mist px-4 py-2 text-[13px] font-semibold hover:bg-pink/15"
               >
                 {naira(v * 100)}
               </button>
             ))}
           </div>
-          <p className="text-[13px] text-muted">Trial cap per top-up: {naira(TRIAL_CAP)} (example).</p>
+          {ramp && (
+            <p className="text-[13px] text-muted">
+              {min !== null && <>Smallest top-up: {naira(min)}. </>}
+              {max !== null && <>Trial cap per top-up: {naira(max)}.</>}
+            </p>
+          )}
+          {minor > 0 && outOfRange && (
+            <p className="text-[13.5px] font-medium text-pink-deep" role="alert">
+              {min !== null && minor < min ? `The smallest top-up is ${naira(min)}.` : `Each top-up is capped at ${naira(max ?? 0)} for now.`}
+            </p>
+          )}
           {err && <p className="text-[13.5px] font-medium text-pink-deep" role="alert">{err}</p>}
-          <Button type="submit" variant="blue" size="lg" disabled={busy || minor <= 0}>
+          <Button type="submit" variant="blue" size="lg" disabled={busy || !ramp || minor <= 0 || outOfRange}>
             {busy ? "Starting…" : "Get bank transfer details"}
           </Button>
         </form>
@@ -444,7 +486,7 @@ function NairaTransfer({ order, onDone }: { order: Order; onDone: () => void }) 
           ))}
         </dl>
         <p className="rounded-2xl bg-pink/12 p-4 text-[13.5px] font-medium leading-relaxed text-pink-deep">
-          These are mock details for the preview. Don’t send money to them. The live on-ramp (Paycrest) isn’t connected yet.
+          These are mock details for the preview. Don’t send money to them. The live naira partner isn’t connected to this screen yet.
         </p>
         <Button size="lg" onClick={onDone}>Continue</Button>
       </Card>

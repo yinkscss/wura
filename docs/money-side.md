@@ -21,7 +21,7 @@ Everything else stays with Olayinka unless agreed here: the web app screens, lan
 
 | Area | Files | Owner |
 | --- | --- | --- |
-| Naira partner and identity check | `web/src/server/paycrest.ts`, `web/src/app/api/funding/**`, new files under `web/src/server/ramp/` | Samuel |
+| Naira partner and identity check | `web/src/app/api/funding/**`, `web/src/server/ramp/` | Samuel |
 | Money docs | `docs/kyc-and-funding.md`, this file | Samuel |
 | Quotes and venue comparison | `web/src/server/routing.ts`, `docs/routing.md` | Olayinka. The naira partner exposes a `quote()` and routing calls it as one more venue. |
 | Sends, swaps, limits, log | `web/src/server/money.ts`, `testnet.ts`, `signer.ts`, `stellar.ts` | Olayinka |
@@ -60,7 +60,7 @@ Everything else stays with Olayinka unless agreed here: the web app screens, lan
 
 Checked against live endpoints on 13 November 2026. Rates move; rerun before relying on them.
 
-**Paycrest does not settle on Stellar.** `paycrest.ts` already notes this. A live naira flow through Paycrest needs a bridge from another chain, or a different partner.
+**Paycrest does not settle on Stellar.** A live naira flow through it would need a bridge from another chain, or a different partner. Its old code has been removed.
 
 **A Stellar naira anchor is live: LINK, which issues NGNC.**
 
@@ -91,7 +91,36 @@ Cowrie is registered in Lagos, which makes it a backup with a Nigerian entity. I
 
 The other direction is fine at small sizes: 20 USDC bought 30,272 NGNC, about 1,514 naira per dollar. So "send $20 and they get naira" can work. "Change ₦50,000 to dollars" needs dollars from a partner, not from the market.
 
+## Update, 15 November 2026: LINK also runs a dollar anchor, and the build now uses both
+
+Found by reading LINK's public config, docs and code, and by calling the service. No email was needed.
+
+- **A second LINK anchor pays out USDC for naira directly.** [stellar.toml](https://anchor.linkio.world/.well-known/stellar.toml), [limits](https://anchor.linkio.world/sep24/info). Same protocols as the NGNC one (SEP-10 sign-in, SEP-24 hosted page), different domain and signing key. The user pays naira on LINK's page and USDC lands in the wallet. This avoids the market loss in the table above.
+- **Limits it publishes:** 10 to 100,000 USDC, both directions. Its fee endpoint answers 0; LINK's docs say the fee is inside the exchange rate. The rate itself is only shown on LINK's page.
+- **It is open.** No key or agreement is needed to call it. Nothing is agreed with LINK, so the wording rules above still apply.
+- **Checked live on both services with a throwaway wallet, no money:** config validates against the pinned key, the sign-in challenge passes every check, the signed challenge is accepted (session lasts 24 hours), a top-up request returns a page on LINK's own domain, and its status reads as "waiting for you".
+- **Not checked:** that a real deposit completes, what LINK's page asks for, and how long it takes. Licence status is still unknown. No test environment was found; it is mainnet only.
+- **LINK's partner API** (a separate product, needs a key from LINK's dashboard) covers the Ghana cedi, but its reference lists payouts on Base and Polygon only, not Stellar. Parked.
+
+**In both services the user pays naira from a bank account.** The choice is what lands in the wallet: `NGN` keeps it as naira (the NGNC anchor, the wallet's naira balance, 20,000 naira minimum), `USDC` turns it into dollars (the dollar anchor). Naira is the default. Each service has its own pinned key and its own partner sign-in.
+
+What `RAMP_PROVIDER=link` does now:
+
+| Route | What it does |
+| --- | --- |
+| `GET /api/funding/naira/info` | `options`: one set of limits per choice (`NGN`, `USDC`; the mock has `NGN` only). `limits` is the default choice, naira. |
+| `POST /api/funding/naira/order` `{ amount, receive? }` | `amount` is in the chosen currency. First checks on mainnet Horizon that the wallet exists and holds a trustline for what it would receive, and refuses if not. Then answers `{ status: "needs_partner_signin", receive, hash, address, challenge }` or `{ status: "open_partner_page", url, id }`. |
+| `POST /api/funding/naira/signin` `{ receive, challenge, signature }` | The wallet's signature over `hash`. The server checks the challenge again from scratch, sends it to the partner, and keeps the partner session in an httpOnly cookie scoped to `/api/funding`. |
+| `GET /api/funding/naira/status?id=&receive=` | `waiting_for_you`, `processing`, `done` or `failed`. |
+| `POST /api/funding/naira/cashout` `{ amount }` | Preview only, in kobo: amount, fee, what reaches the bank, expiry. Applies the partner's cash-out limits, Wura's per-payment cap and the daily cap (`checkLimits`). It signs and logs nothing; the live partner still refuses cash-outs. |
+
+For the screen (Olayinka's): on `needs_partner_signin`, sign `hash` with the same Privy hash signer used for sends, post to `signin`, then call `order` again and open `url`. The challenge has sequence number 0, so signing it cannot move money.
+
+What blocks a real top-up in the app: the app runs on testnet and the partner is on mainnet. A user's wallet has no mainnet account or trustline, so `order` refuses with "Your wallet isn't set up to receive naira from the naira partner yet." That is deliberate: nobody should pay naira for dollars that can't be delivered. Cash-outs are still refused.
+
 ## Plan, in order
+
+The list below is the original plan. Step 1 is no longer needed to build, step 3 is done, and step 4 is done up to "open the page and read status" against the dollar anchor.
 
 1. **Ask LINK** (support address in its config file): whether it has a testnet anchor, fees, timing, the identity fields it asks for, whether it can deliver USDC for naira directly, and which Nigerian entity holds which CBN licence. Samuel sends this. Not sent yet.
 2. **One manual test:** a 20,000 naira deposit and a 10,000 naira withdrawal through LINK in an ordinary Stellar wallet, timed. Real money, so only after both of us agree it in chat.
@@ -112,5 +141,6 @@ Steps 3 to 6 are for after the application goes in on 21 November. The demo keep
 
 ## Decided
 
-- LINK is the first partner to pursue. Paycrest stays parked because it does not settle on Stellar. The concept and KYC docs still say Paycrest and have not been changed yet.
+- The build uses both LINK anchors. Naira in, naira stays naira: the NGNC one. Naira in, dollars out: the dollar one (anchor.linkio.world), so there is no swap.
+- LINK is the first partner to pursue. Paycrest is parked because it does not settle on Stellar. The concept, KYC, open-questions and application docs now say LINK.
 - `routing.ts` stays with Olayinka.

@@ -1,4 +1,4 @@
-import { verifyIdentity } from "@/server/paycrest";
+import { verifyIdentity } from "@/server/ramp";
 import { authed, jsonBody } from "@/server/route";
 
 export const POST = authed(async (s, req) => {
