@@ -91,7 +91,7 @@ test("keeping it as naira uses the naira service, its own limits and its own tok
   await assert.rejects(startTopUp(s, { amount: 19_999_00, receive: "NGN" }), fails("BAD_REQUEST", /smallest naira top-up is ₦20,000/));
   await assert.rejects(startTopUp(s, { amount: 50_001_00, receive: "NGN" }), fails("TRIAL_LIMIT", /capped at ₦50,000/));
   // The wallet holds dollars but no naira token, so a naira top-up is refused.
-  await assert.rejects(startTopUp(s, { amount: 20_000_00, receive: "NGN", partnerToken: jwt(s.address) }), fails("SIGNING_UNAVAILABLE", /isn't set up to hold naira/));
+  await assert.rejects(startTopUp(s, { amount: 20_000_00, receive: "NGN", partnerToken: jwt(s.address) }), fails("SIGNING_UNAVAILABLE", /one-time setup before it can hold naira/));
   let body: Record<string, unknown> | undefined;
   world({
     account: "naira",
@@ -117,7 +117,7 @@ test("amounts outside the limits are refused in plain words, before the partner 
 test("a wallet that can't receive dollars on the live network is refused before any sign-in", async () => {
   for (const account of ["missing", "no_dollars"] as const) {
     world({ account });
-    await assert.rejects(startTopUp(s, { amount: 10_00, receive: R, partnerToken: jwt(s.address) }), fails("SIGNING_UNAVAILABLE", /isn't set up to hold dollars/));
+    await assert.rejects(startTopUp(s, { amount: 10_00, receive: R, partnerToken: jwt(s.address) }), fails("SIGNING_UNAVAILABLE", /one-time setup before it can hold dollars/));
     assert.ok(!calls.some((c) => c.includes("/auth") || c.includes("/transactions")));
   }
 });
@@ -184,6 +184,7 @@ test("status reads a top-up in plain states, and only top-ups", async () => {
   assert.deepEqual(await topUpStatus(s, { id: "tx-1", receive: R, partnerToken: jwt(s.address) }), {
     id: "tx-1",
     state: "done",
+    message: "Done. The money is in your wallet.",
     currency: "USDC",
     received: 12_10,
     fee: 40,
@@ -205,7 +206,7 @@ test("a cash-out is checked against the limits and the wallet's real balance bef
   await assert.rejects(startCashOut(s, { amount: 50_01, from: R }), fails("TRIAL_LIMIT", /capped at \$50\.00/));
   await assert.rejects(startCashOut(s, { amount: 25_00, from: R, partnerToken: jwt(s.address) }), fails("INSUFFICIENT_BALANCE", /don't have enough/));
   world({ account: "missing" });
-  await assert.rejects(startCashOut(s, { amount: 25_00, from: R, partnerToken: jwt(s.address) }), fails("SIGNING_UNAVAILABLE", /isn't set up to hold dollars/));
+  await assert.rejects(startCashOut(s, { amount: 25_00, from: R, partnerToken: jwt(s.address) }), fails("SIGNING_UNAVAILABLE", /one-time setup before it can hold dollars/));
   assert.ok(!calls.some((c) => c.includes("/auth") || c.includes("/transactions")));
 });
 
@@ -234,12 +235,12 @@ test("cash-out status says when the partner is ready to be paid, without handing
   world({ extra: withdrawal({ status: "incomplete" }) });
   const token = jwt(s.address);
   assert.deepEqual(await cashOutStatus(s, { id: "w-1", from: R, partnerToken: token }), {
-    id: "w-1", state: "waiting_for_you", currency: "USDC", send: null, fee: null, readyToPay: false, txRef: null,
+    id: "w-1", state: "waiting_for_you", message: "Enter your bank account on the partner's page to continue. Nothing has left your wallet.", currency: "USDC", send: null, fee: null, readyToPay: false, txRef: null,
   });
   assert.equal(await cashOutPayment(s, { id: "w-1", from: R, partnerToken: token }), null);
   world({ extra: withdrawal(ready) });
   const st = await cashOutStatus(s, { id: "w-1", from: R, partnerToken: token });
-  assert.deepEqual(st, { id: "w-1", state: "waiting_for_you", currency: "USDC", send: 25_00, fee: 50, readyToPay: true, txRef: null });
+  assert.deepEqual(st, { id: "w-1", state: "waiting_for_you", message: "The partner is ready. Approve the payment from your wallet to finish the cash-out.", currency: "USDC", send: 25_00, fee: 50, readyToPay: true, txRef: null });
   assert.ok(!JSON.stringify(st).includes(PARTNER_ACCOUNT));
   // A top-up id is not a cash-out.
   world({ extra: (url) => (url.pathname === "/sep24/transaction" ? Response.json({ transaction: { id: "w-1", kind: "deposit", status: "completed" } }) : undefined) });
