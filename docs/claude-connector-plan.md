@@ -117,6 +117,11 @@ Reuse `TOOLS` and `runTool` from `tools.ts`. Each tool gets a `title` and an hon
    - Approval links rebuild for up to 24 h after they were first prepared. Previews older than 2 days are pruned, approved or not.
    - Not done yet: the per-token rate limit.
 4. **In-chat Approve (stretch).** Only if the spike passed. MCP App card, app-only approve with a one-time code, agent-key signing.
+   - **Built (15 Nov):** only for Claude's own connection, where every redirect URI is https on claude.ai or claude.com. Other clients (loopback, scripts) get the link only, with no card, no code and no `approve_send`.
+   - `preview_send` returns the card (`ui://wura/send-preview.html`), `structuredContent`, and a one-time code in `_meta`. Only the code's sha256 is stored, in `wallet.cardCodes`, apart from the intent so it never reaches a browser.
+   - The app-only `approve_send` checks the code inside the wallet lock and spends it on any attempt. It then runs `createSend(via:"chat")`: the agent key, with every check run again.
+   - The code is also cleared on cancel and when `/approve` rebuilds the preview.
+   - The card shows "Open in Wura" when chat approvals are off, when the preview has expired, or after a refusal.
 5. **ChatGPT.** Add the same `/mcp` as a custom MCP server in ChatGPT. Add CIMD if ChatGPT needs it beyond DCR. Publishing to ChatGPT's app directory needs organization verification and a privacy policy; that's a separate decision.
 
 ## Tests

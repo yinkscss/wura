@@ -10,7 +10,7 @@ import { Button, Card, Pill } from "./ui";
 type Ready = { status: "ready"; chatApproval?: ChatApprovalStatus };
 
 /**
- * Testnet only: lets chat apps (Telegram first) approve sends. Turning it on
+ * Testnet only: lets chat apps (Telegram, Claude) approve sends. Turning it on
  * adds Wura's agent key as a second signer on the user's Stellar account,
  * signed once by their own wallet. Turning it off removes it.
  */
@@ -64,7 +64,7 @@ export function ChatApprovalsCard() {
       ) : (
         <>
           <p className="text-[14.5px] text-muted">
-            Lets you tap Approve in Telegram to send testnet USDC, without opening this page. Your wallet adds a Wura key
+            Lets you tap Approve in Telegram or Claude to send testnet USDC, without opening this page. Your wallet adds a Wura key
             that can only make payments. It can’t change your wallet or add signers, and Wura still checks your limits
             before every payment. You can turn it off any time.
           </p>
