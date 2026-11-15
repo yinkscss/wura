@@ -91,6 +91,25 @@ export async function getClient(clientId: string): Promise<OAuthClient | null> {
 }
 
 /** RFC 7591 dynamic client registration (public clients only). */
+/**
+ * True when every redirect URI of this client is https on claude.ai or
+ * claude.com, so its tokens can only have reached Claude. Only Claude was
+ * shown (spike, 14 Nov) to hide app-only tools and `_meta` from the model, so
+ * only Claude gets the in-chat Approve card.
+ */
+export async function isClaudeClient(clientId: string) {
+  const c = await getClient(clientId);
+  if (!c || c.redirect_uris.length === 0) return false;
+  return c.redirect_uris.every((u) => {
+    try {
+      const x = new URL(u);
+      return x.protocol === "https:" && (x.host === "claude.ai" || x.host === "claude.com");
+    } catch {
+      return false;
+    }
+  });
+}
+
 export async function registerClient(input: { client_name?: unknown; redirect_uris?: unknown }): Promise<OAuthClient> {
   const uris = Array.isArray(input.redirect_uris) ? input.redirect_uris.map(String) : [];
   if (uris.length === 0 || uris.length > 5) throw new OAuthError("invalid_redirect_uri", "Give 1 to 5 redirect_uris.");

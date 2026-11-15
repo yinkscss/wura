@@ -361,6 +361,8 @@ export async function openApproval(s: Session, id: string): Promise<{ kind: "sen
   if (intent) {
     if (intent.status === "expired" || (intent.status === "pending" && Date.now() > intent.expiresAt)) {
       if (tooOld(intent)) throw new ApiFailure("QUOTE_EXPIRED", APPROVAL_TOO_OLD, 410);
+      // A card in a chat app still shows the old numbers: it can't approve the rebuilt ones.
+      delete (w.cardCodes ??= {})[intent.id];
       const contact = findContact(w, intent.to.address)!;
       Object.assign(intent, await sendFigures(s, w, contact, intent.asset, intent.amount));
     }
@@ -446,6 +448,7 @@ export async function createSend(s: Session, input: { intentId: string; approve:
 }
 
 export function cancelSend(s: Session, intentId: string) {
+  delete (wallet(s.userId).cardCodes ??= {})[intentId];
   const i = wallet(s.userId).sends.get(intentId);
   if (i && i.status === "pending") i.status = "cancelled";
   return { ok: true };

@@ -1,13 +1,18 @@
 import "server-only";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { naira, usdc } from "@/lib/format";
 import type { Currency } from "@/lib/types";
-import { config } from "./config";
+import { chatApprovalStatus, chatApprovalsAvailable } from "./agent-key";
+import { approveSendFromChat } from "./channel";
+import { config, serverDevSigning } from "./config";
+import { ApiFailure } from "./errors";
+import { sendPreviewCardHtml, type CardPreview } from "./mcp-card";
 import { openPreviewCount } from "./money";
 import type { Scope } from "./oauth";
 import type { Session } from "./session";
-import { withWallet } from "./store";
+import { wallet, withWallet } from "./store";
 import { runTool, type ToolOutcome } from "./tools";
 
 /**
@@ -25,10 +30,20 @@ const MAX_OPEN_PREVIEWS = 5;
 type Result = { content: { type: "text"; text: string }[]; isError: boolean };
 const reply = (text: string, isError = false): Result => ({ content: [{ type: "text", text }], isError });
 
+/** The in-chat Approve card (MCP Apps). */
+const CARD_URI = "ui://wura/send-preview.html";
+const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
+const sha256 = (v: string) => createHash("sha256").update(v).digest();
+
 const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
 const fmt = (minor: number, c: Currency) => (c === "NGN" ? naira(minor) : usdc(minor));
 
-export function buildMcpServer(s: Session, scopes: Scope[], base: string) {
+/**
+ * `inChatApprove` is true only for Claude's own connection (redirects on
+ * claude.ai / claude.com). Claude was shown to keep app-only tools and `_meta`
+ * out of the model's reach; other clients get the approval link only.
+ */
+export function buildMcpServer(s: Session, scopes: Scope[], base: string, opts: { inChatApprove?: boolean } = {}) {
   const server = new McpServer(
     { name: "wura", version: "0.3.0" },
     {
@@ -37,6 +52,7 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string) {
     },
   );
   const can = (scope: Scope) => scopes.includes(scope);
+  const card = !!opts.inChatApprove && can("wura.prepare");
   const approveUrl = (id: string) => `${base}/approve/${encodeURIComponent(id)}`;
 
   // Refusals (limits, balance, unknown contact) come back as the plain reason.
@@ -108,6 +124,7 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string) {
           amount_usdc: z.number().positive().describe("USDC amount in dollars, e.g. 20 or 12.5."),
         },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        ...(card ? { _meta: { ui: { resourceUri: CARD_URI } } } : {}),
       },
       async ({ to, amount_usdc }) => {
         const busy = await tooMany();
@@ -116,7 +133,7 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string) {
         if (out.isError || out.card?.type !== "send") return refusal(out);
         const i = out.card.intent;
         const testnet = config.moneyMode === "testnet";
-        return reply(
+        const text = reply(
           [
             `Prepared, not sent: ${usdc(i.amount)} to ${i.to.saved ? `${i.to.name} (${short(i.to.address)})` : short(i.to.address)}.`,
             i.fee ? `Fee ${usdc(i.fee)}, total ${usdc(i.total)}.` : "Network fee is paid in test XLM.",
@@ -124,12 +141,89 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string) {
             `To send it, the user opens this link, signs in to Wura and confirms: ${approveUrl(i.id)}`,
             "If the link is opened after a minute, Wura checks everything again and shows fresh numbers before they confirm.",
             i.to.saved === false ? "This address isn't in their favourites. After it goes through they can save it with a name." : "",
+            card ? "Wura also shows the user a card here with an Approve button. Only the user can tap it; you can't approve it." : "",
           ]
             .filter(Boolean)
             .join("\n"),
         );
+        if (!card) return text;
+
+        // One-time code for the card's Approve button. It goes only in _meta
+        // (the card gets it; the model doesn't), and only its hash is stored.
+        const code = randomBytes(18).toString("base64url");
+        await withWallet(s.userId, async () => {
+          (wallet(s.userId).cardCodes ??= {})[i.id] = sha256(code).toString("hex");
+        });
+        const inChat =
+          config.moneyMode !== "testnet" || serverDevSigning() || (chatApprovalsAvailable() && (await chatApprovalStatus(s).catch(() => null))?.active === true);
+        const data: CardPreview = {
+          intentId: i.id,
+          to: i.to.name,
+          toAddress: i.to.address,
+          amount: (i.amount / 100).toFixed(2),
+          fee: (i.fee / 100).toFixed(2),
+          total: (i.total / 100).toFixed(2),
+          network: config.moneyMode === "testnet" ? "testnet" : "mock",
+          dailyLeftAfter: (i.dailyRemainingAfter / 100).toFixed(2),
+          perPaymentCap: (i.perPaymentCap / 100).toFixed(2),
+          expiresAt: i.expiresAt,
+          inChat,
+          approveUrl: approveUrl(i.id),
+        };
+        return { ...text, structuredContent: data, _meta: { approvalCode: code } };
       },
     );
+
+    if (card) {
+      server.registerTool(
+        "approve_send",
+        {
+          title: "Approve (card button only)",
+          description: "Used only by the Approve button on Wura's send card. Not for the assistant.",
+          inputSchema: { intentId: z.string(), approvalCode: z.string() },
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+          _meta: { ui: { resourceUri: CARD_URI, visibility: ["app"] } },
+        },
+        async ({ intentId, approvalCode }) => {
+          try {
+            const res = await withWallet(s.userId, async () => {
+              const codes = (wallet(s.userId).cardCodes ??= {});
+              const want = codes[intentId];
+              const got = sha256(approvalCode);
+              if (!want || !approvalCode || !timingSafeEqual(Buffer.from(want, "hex"), got)) {
+                throw new ApiFailure("NOT_APPROVED", "This button only works once, from the card Wura showed for this payment.", 403);
+              }
+              delete codes[intentId]; // one use, whatever happens next
+              return approveSendFromChat(s, intentId);
+            });
+            if (!("activity" in res) || !res.activity) {
+              return reply(`That needs your wallet to sign. Open it in Wura to finish: ${approveUrl(intentId)}`, true);
+            }
+            const a = res.activity;
+            const where = a.explorerUrl ? `View it on Stellar: ${a.explorerUrl}` : `Reference ${a.txRef ?? "n/a"}${res.mock ? " (mock, nothing was broadcast)" : ""}.`;
+            return { ...reply(`Sent ${a.amount} ${a.detail.replace(/^To /, "to ")}. ${where}`), structuredContent: { reference: a.txRef ?? "", explorerUrl: a.explorerUrl ?? "" } };
+          } catch (err) {
+            if (err instanceof ApiFailure) return reply(`${err.message} You can open it in Wura instead.`, true);
+            throw err;
+          }
+        },
+      );
+      server.registerResource(
+        "Wura send preview",
+        CARD_URI,
+        { mimeType: RESOURCE_MIME_TYPE, description: "Send preview card with an Approve button" },
+        async () => ({
+          contents: [
+            {
+              uri: CARD_URI,
+              mimeType: RESOURCE_MIME_TYPE,
+              text: sendPreviewCardHtml(base),
+              _meta: { ui: { csp: { resourceDomains: [base, "https://fonts.googleapis.com", "https://fonts.gstatic.com"] } } },
+            },
+          ],
+        }),
+      );
+    }
     server.registerTool(
       "prepare_swap",
       {

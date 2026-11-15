@@ -1,6 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { buildMcpServer } from "@/server/mcp";
-import { baseUrl, verifyAccessToken } from "@/server/oauth";
+import { baseUrl, isClaudeClient, verifyAccessToken } from "@/server/oauth";
 import { CORS } from "@/server/oauth-http";
 import { sessionForUser } from "@/server/users";
 
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   const session = await sessionForUser(grant.userId);
   if (!session) return unauthorized(req, true);
 
-  const server = buildMcpServer(session, grant.scopes, baseUrl(req));
+  const server = buildMcpServer(session, grant.scopes, baseUrl(req), { inChatApprove: await isClaudeClient(grant.clientId) });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   return transport.handleRequest(req);
