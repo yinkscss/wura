@@ -144,3 +144,4 @@ Steps 3 to 6 are for after the application goes in on 21 November. The demo keep
 - The build uses both LINK anchors. Naira in, naira stays naira: the NGNC one. Naira in, dollars out: the dollar one (anchor.linkio.world), so there is no swap.
 - LINK is the first partner to pursue. Paycrest is parked because it does not settle on Stellar. The concept, KYC, open-questions and application docs now say LINK.
 - `routing.ts` stays with Olayinka.
+- **Full mainnet (proposed 15 November, Samuel to confirm):** cash in, cash out, stable transfers and payment links all on Stellar mainnet, in stages, with Preview never on mainnet. There is no test version of the LINK anchors, so testing is small real amounts. Plan, both paths and the open decisions: [Mainnet plan](mainnet-plan.md).
