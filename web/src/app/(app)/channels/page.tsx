@@ -1,5 +1,7 @@
 import { ChatApprovalsCard } from "@/components/chat-approvals";
+import { ConnectedAppsCard } from "@/components/connected-apps";
 import { Card } from "@/components/ui";
+import { TelegramCard } from "@/components/telegram-card";
 import { ConnectedApps, PageHeader } from "@/components/wallet-parts";
 
 export default function ChannelsPage() {
@@ -13,10 +15,11 @@ export default function ChannelsPage() {
         </Card>
         <Card className="flex flex-col gap-3 p-6 text-[14.5px] text-muted shadow-soft sm:p-7">
           <h2 className="text-[20px] font-bold tracking-[-0.03em] text-blue">What’s live</h2>
-          <p>This web app is the first channel. Claude, ChatGPT, Telegram and WhatsApp aren’t connected yet.</p>
-          <p>When they are, each one uses the same wallet, the same limits and the same approval step. A chat app only gets a key that’s capped to your limits, and it can’t move money without your yes.</p>
+          <p>Every app uses the same wallet and limits, and none can move money without your yes.</p>
         </Card>
       </div>
+      <ConnectedAppsCard />
+      <TelegramCard />
       <ChatApprovalsCard />
     </div>
   );

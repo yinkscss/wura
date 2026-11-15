@@ -1,9 +1,15 @@
 import { config } from "@/server/config";
 import { getActivity, getBalances, getLimits, getPaymentLinks } from "@/server/money";
-import { authed } from "@/server/route";
-import { wallet } from "@/server/store";
+import { signedIn } from "@/server/route";
+import { wallet, withWallet } from "@/server/store";
+import { recordUser } from "@/server/users";
 
-export const GET = authed(async (s) => ({
+// recordUser runs before the wallet lock: it uses its own DB connection, and
+// holding the lock while waiting for a second connection can starve the pool
+// when several requests for the same user arrive at once.
+export const GET = signedIn(async (s) => {
+  await recordUser(s);
+  return withWallet(s.userId, async () => ({
   me: {
     email: s.email,
     address: s.address,
@@ -16,4 +22,5 @@ export const GET = authed(async (s) => ({
   limits: getLimits(s),
   activity: getActivity(s),
   links: getPaymentLinks(s),
-}));
+  }));
+});

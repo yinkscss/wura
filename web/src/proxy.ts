@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, readSessionToken } from "@/server/session";
 
 // Optimistic route guard. The API re-checks the session on every call.
-const PROTECTED = ["/wallet", "/chat", "/activity", "/limits", "/channels", "/settings", "/onboarding"];
+const PROTECTED = ["/wallet", "/chat", "/activity", "/limits", "/channels", "/settings", "/onboarding", "/favourites", "/approve"];
 
 export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;

@@ -118,7 +118,7 @@ Otherwise the API returns an error, and nothing is signed. The caps are **exampl
   - **Soroswap:** the quote API, limited to Soroswap pools. Needs `SOROSWAP_API_KEY`.
 
   Naira is quoted as **NGNC**, the most-held naira asset on Stellar. A venue that can't be quoted is left out with its reason, never given an invented rate. Each quote is also compared with a market USD→NGN rate (ExchangeRate-API, cached for an hour), and the card warns when the best Stellar price is 3% or more off the market. Executing a swap stays simulated in mock mode and is refused on testnet. `QUOTE_SOURCE=mock` brings back the fixed example prices from the mockups. There is no live StellarRoute dependency.
-- **Naira partner** (`src/server/ramp/`): one interface for naira top-ups, cash-outs and the identity check, with two providers behind `RAMP_PROVIDER`. `mock` (default) is the fictional top-up: it refuses without a passed identity check, keeps only the verified status (never the NIN), and applies an example trial cap. `link` reads a live Stellar anchor's published limits (read-only, mainnet), so the smallest top-up comes from the partner and is not hard-coded; top-ups and cash-outs through it are still refused. Nothing in this folder signs a transaction. `GET /api/funding/naira/info` returns the limits for the screens. See [`../docs/money-side.md`](../docs/money-side.md).
+- **Paycrest** (`src/server/paycrest.ts`): a mocked naira on-ramp order. It refuses without a passed identity check, keeps only the verified status (never the NIN), and applies an example trial cap. The UI does not promise a one-time NIN, because reuse isn't confirmed with Paycrest.
 - **Signer** (`src/server/signer.ts`, `src/server/testnet.ts`): mock by default. In testnet mode, USDC sends are signed by the user's Privy wallet (or the dev key) and submitted to Horizon, as described above. `signer.ts` also notes the future scoped session key for Telegram, WhatsApp and MCP.
 - **Site connect** (`src/server/site-connect.ts`, routes under `/api/sites/*`): follows [`../docs/site-connect.md`](../docs/site-connect.md), mocked. A site that isn't on the allow list gets “Connect to this site?” first, with an option to add it. Then Wura runs the mocked discovery path: read the page, find the Soroban contract, check it's verified, read its interface, simulate, and show a signing preview. Signing goes through the same server-side approval, caps and log as a send. The allow list is permission to connect, never to sign. Only fictional sites on reserved example domains work in mock mode:
   - `market.example.org`: allowed by default; buy items at 12.50 USDC each
@@ -134,7 +134,23 @@ Otherwise the API returns an error, and nothing is signed. The caps are **exampl
 - **Favourites** (`/favourites`, `/api/contacts`): saved names for Stellar addresses, kept in the wallet state (Postgres). After a send to an address that isn't saved, the chat offers a "Save to favourites" card; "send $10 to Isaac" then resolves the name. The chat model can also save (`save_contact`) and list (`list_contacts`) favourites. A name maps to one address; saving an address again renames it.
 - **Chat eval** (`npm run agent-eval -- <url>`): ten fixed prompts against a mock-mode server, checking card types and that the activity log never grows. Makes real calls to the configured model.
 
-Claude, ChatGPT, Telegram and WhatsApp appear only as "connected apps" labels, marked as not connected yet. They use generic icons, not their logos.
+- **Telegram bot** (`src/server/telegram/`, `/api/telegram/webhook`, `/api/telegram/link`): the same chat brain in Telegram, plan in `docs/telegram-bot-plan.md`. On the Channels page, "Connect Telegram" makes a single-use, 10-minute link (`t.me/<bot>?start=<code>`); the bot links that chat to the user's `user_id` only. Email and address come from the shared `users` table (`recordUser` / `sessionForUser` in `src/server/users.ts`, also used by the Claude connector), written on every sign-in, so they never go stale. Replies are plain text; quote, send and site cards become messages with inline buttons. Money moves only when the linked user taps a button: the tap calls `approveSendFromChat` / `approveSwapFromChat` / `cancelSend` / `cancelQuote` from `channel.ts` inside `withWallet`, and free text such as "yes" never approves. The webhook checks Telegram's secret header in constant time, ignores repeated `update_id`s, answers 200 and does the work in `after()` (`maxDuration` 60). Only private chats are served; 20 messages a minute per user. Rate limit, history and links live in Postgres (in memory without `DATABASE_URL`, demo only). On testnet with Privy, sends need "Approve from chat apps" turned on, otherwise the bot shows the `CHAT_APPROVAL_OFF` message; swaps are refused on testnet.
+
+Claude, ChatGPT and WhatsApp appear only as "connected apps" labels, marked as not connected yet. They use generic icons, not their logos.
+
+### Telegram bot setup
+
+1. Create a bot with @BotFather and copy its token.
+2. Set these in `.env.local` (or Vercel): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` (no `@`), `TELEGRAM_WEBHOOK_SECRET` (16+ characters: letters, digits, `_`, `-`), and optionally `APP_URL` (public https origin; defaults to the Vercel URL). The bot is off unless the first three are set.
+3. Point Telegram at the app (needs a public https URL; use a tunnel such as cloudflared locally):
+
+```bash
+node scripts/telegram-webhook.mjs set https://your-app.example.com
+node scripts/telegram-webhook.mjs info     # check it, shows last error
+node scripts/telegram-webhook.mjs delete   # remove it
+```
+
+4. Sign in to the web app, open Channels, tap Connect Telegram, then Start in the chat.
 
 ## Scripts
 
@@ -142,5 +158,5 @@ Claude, ChatGPT, Telegram and WhatsApp appear only as "connected apps" labels, m
 npm run dev     # local dev server
 npm run build   # production build
 npm run lint    # ESLint
-npm test        # naira partner tests (needs Node 23.6+; reads .ts files directly)
+npm test        # unit and safety tests (no network, no database)
 ```

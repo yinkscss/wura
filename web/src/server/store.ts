@@ -59,6 +59,11 @@ export type WalletState = {
   allowList: AllowedSite[];
   siteRequests: Map<string, SiteConnectRequest>;
   siteActions: Map<string, SiteAction>;
+  /**
+   * One-time codes for the in-chat Approve card (Claude), by send intent id:
+   * sha256 hex only. Kept apart from the intent so it never reaches a browser.
+   */
+  cardCodes: Record<string, string>;
 };
 
 const g = globalThis as unknown as { __agentStore?: Map<string, WalletState> };
@@ -97,6 +102,7 @@ function seedTestnet(): WalletState {
     allowList: [],
     siteRequests: new Map(),
     siteActions: new Map(),
+    cardCodes: {},
   };
 }
 
@@ -141,6 +147,7 @@ function seed(): WalletState {
     ],
     siteRequests: new Map(),
     siteActions: new Map(),
+    cardCodes: {},
   };
 }
 
@@ -181,7 +188,8 @@ export function resetWallet(userId: string) {
 
 // ---------- Postgres persistence ----------
 
-type Stored = Omit<WalletState, "activity" | "pendingTx" | "quotes" | "sends" | "siteRequests" | "siteActions"> & {
+type Stored = Omit<WalletState, "activity" | "pendingTx" | "quotes" | "sends" | "siteRequests" | "siteActions" | "cardCodes"> & {
+  cardCodes?: Record<string, string>;
   pendingTx: Array<[string, PendingTx]>;
   quotes: Array<[string, Quote]>;
   sends: Array<[string, SendIntent]>;
@@ -191,10 +199,10 @@ type Stored = Omit<WalletState, "activity" | "pendingTx" | "quotes" | "sends" | 
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** Keep pending items; drop finished ones once they're a couple of days old. */
+/** Drop items (finished or never approved) once they're a couple of days old. */
 function prune<T extends { status: string }>(m: Map<string, T>, when: (v: T) => number) {
   const cutoff = Date.now() - 2 * DAY;
-  return [...m.entries()].filter(([, v]) => v.status === "pending" || when(v) > cutoff);
+  return [...m.entries()].filter(([, v]) => when(v) > cutoff);
 }
 
 function serialize(w: WalletState): Stored {
@@ -211,6 +219,8 @@ function serialize(w: WalletState): Stored {
     sends: prune(w.sends, (v) => v.expiresAt),
     siteRequests: prune(w.siteRequests, (v) => v.createdAt),
     siteActions: prune(w.siteActions, (v) => v.expiresAt),
+    // Only codes for sends that are still waiting.
+    cardCodes: Object.fromEntries(Object.entries(w.cardCodes ?? {}).filter(([id]) => w.sends.get(id)?.status === "pending")),
   };
 }
 
@@ -226,6 +236,7 @@ function deserialize(s: Stored, activity: Activity[]): WalletState {
     allowList: s.allowList ?? [],
     links: s.links ?? [],
     contacts: s.contacts ?? [],
+    cardCodes: s.cardCodes ?? {},
   };
 }
 

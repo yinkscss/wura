@@ -28,6 +28,8 @@ export type UnquotedVenue = { venue: VenueId; name: string; reason: string };
 
 export type Quote = {
   id: string;
+  /** When it was first prepared; an approval link stops rebuilding it after a day. */
+  createdAt?: number;
   from: Currency;
   to: Currency;
   amountIn: number;
@@ -55,6 +57,8 @@ export type Contact = { name: string; address: string };
 
 export type SendIntent = {
   id: string;
+  /** When it was first prepared; an approval link stops rebuilding it after a day. */
+  createdAt?: number;
   /** `saved` is false when the user typed a raw address that isn't in their favourites. */
   to: { name: string; address: string; saved?: boolean };
   asset: Currency;
