@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import type { Activity } from "@/lib/types";
 import { when } from "@/lib/format";
 import { ChatGPTLogo, ClaudeLogo, TelegramLogo, WhatsAppLogo } from "./brand-icons";
-import { RefreshIcon } from "./icons";
+import { CheckIcon, CopyIcon, RefreshIcon } from "./icons";
 import { copyText } from "./money-cards";
 import { useOverview } from "./overview";
 import { buttonClass, Card, Pill, cx } from "./ui";
@@ -104,7 +104,7 @@ const isHost = (host: string, domains: string[]) => domains.some((d) => host ===
 export function ConnectedApps({ big = false }: { big?: boolean }) {
   const [telegramOn, setTelegramOn] = useState(false);
   const [conn, setConn] = useState<{ claude: boolean; chatgpt: boolean; origin: string } | null>(null);
-  const [chatgptHint, setChatgptHint] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
   useEffect(() => {
     api<{ enabled: boolean }>("/api/telegram/link")
       .then((s) => setTelegramOn(s.enabled))
@@ -120,26 +120,31 @@ export function ConnectedApps({ big = false }: { big?: boolean }) {
       );
   }, []);
 
-  async function addToChatGPT(origin: string) {
-    const url = `${origin}/mcp`;
-    const copied = await copyText(url);
-    window.open(CHATGPT_PLUGINS_URL, "_blank", "noopener,noreferrer");
-    setChatgptHint(
-      `${copied ? "Wura’s URL is copied." : `Copy ${url}.`} In ChatGPT, tap + → Add custom MCP server, paste it and choose OAuth. Your ChatGPT plan has to allow custom MCP servers.`,
-    );
-  }
-
   function status(name: string) {
     if (name === "Claude" || name === "ChatGPT") {
       if (!conn) return null;
       if (name === "Claude" ? conn.claude : conn.chatgpt) return <Pill tone="pink">Live</Pill>;
       return name === "Claude" ? (
-        <a href={addToClaudeUrl(conn.origin)} target="_blank" rel="noopener noreferrer" className={buttonClass("blue", "sm", "shrink-0")}>
-          Add to Claude
+        <a href={addToClaudeUrl(conn.origin)} target="_blank" rel="noopener noreferrer" aria-label="Add to Claude" className={buttonClass("blue", "sm", "shrink-0")}>
+          <span className="sm:hidden">Add</span>
+          <span className="hidden sm:inline">Add to Claude</span>
         </a>
       ) : (
-        <button type="button" onClick={() => addToChatGPT(conn.origin)} className={buttonClass("blue", "sm", "shrink-0")}>
-          Add to ChatGPT
+        <button
+          type="button"
+          onClick={() => setGuideOpen((o) => !o)}
+          aria-expanded={guideOpen}
+          aria-label={guideOpen ? "Close ChatGPT setup" : "Add to ChatGPT"}
+          className={buttonClass(guideOpen ? "outline-blue" : "blue", "sm", "shrink-0")}
+        >
+          {guideOpen ? (
+            "Close"
+          ) : (
+            <>
+              <span className="sm:hidden">Add</span>
+              <span className="hidden sm:inline">Add to ChatGPT</span>
+            </>
+          )}
         </button>
       );
     }
@@ -156,16 +161,73 @@ export function ConnectedApps({ big = false }: { big?: boolean }) {
               <a.Logo size={22} />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-[15.5px] font-bold tracking-[-0.02em]">{a.name}</div>
+              <div className="truncate text-[15.5px] font-bold tracking-[-0.02em]">{a.name}</div>
               <div className="truncate text-[13px] text-muted">{a.kind}</div>
             </div>
             {status(a.name)}
           </div>
-          {a.name === "ChatGPT" && chatgptHint && !conn?.chatgpt && (
-            <p className="mt-3 break-words text-[13px] leading-snug text-muted">{chatgptHint}</p>
-          )}
+          {a.name === "ChatGPT" && guideOpen && conn && !conn.chatgpt && <ChatGPTGuide url={`${conn.origin}/mcp`} />}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** ChatGPT can't be prefilled from a link, so this walks through adding Wura by hand. */
+function ChatGPTGuide({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    if (await copyText(url)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    }
+  }
+  const steps = [
+    <>Copy Wura’s address.</>,
+    <>
+      In ChatGPT, open <b>Plugins</b>, tap <b>+</b>, then <b>Add custom MCP server</b>.
+    </>,
+    <>
+      Name it <b>Wura</b>, paste the address, and choose <b>OAuth</b> for authentication.
+    </>,
+    <>
+      Tap <b>I understand and want to continue</b>, then <b>Create as a plugin</b>.
+    </>,
+    <>
+      Sign in to Wura when asked and tap <b>Allow</b>. Then just ask, e.g. “send $1 to Isaac”.
+    </>,
+  ];
+  return (
+    <div className="mt-4 rounded-xl bg-white p-4 shadow-soft">
+      <ol className="flex flex-col gap-3">
+        {steps.map((step, n) => (
+          <li key={n} className="flex gap-3 text-[13.5px] leading-snug">
+            <span className="grid size-5 shrink-0 place-items-center rounded-full bg-blue text-[11px] font-bold text-white">{n + 1}</span>
+            <div className="min-w-0 flex-1 pt-px">
+              {step}
+              {n === 0 && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg bg-mist py-1.5 pl-3 pr-1.5">
+                  <code className="min-w-0 flex-1 break-all font-mono text-[12.5px] text-blue">{url}</code>
+                  <button
+                    type="button"
+                    onClick={copy}
+                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-white px-2.5 py-1.5 text-[12px] font-semibold text-blue"
+                  >
+                    {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <a href={CHATGPT_PLUGINS_URL} target="_blank" rel="noopener noreferrer" className={buttonClass("blue", "sm")}>
+          Open ChatGPT
+        </a>
+        <span className="text-[12px] text-soft">Your ChatGPT plan has to allow custom MCP servers.</span>
+      </div>
     </div>
   );
 }
