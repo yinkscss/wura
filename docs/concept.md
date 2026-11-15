@@ -10,7 +10,7 @@ Nothing described here is live. A first web preview in mock mode lives in this r
 
 Users fund Wura in two ways:
 
-- Naira, through on-ramping. The product uses our own Paycrest API key.
+- Naira, through on-ramping. The first partner is LINK, a Stellar anchor that needs no API key.
 - USDC, sent as a stablecoin. This does not need an ID check to start.
 
 Once funded, a user can ask Wura to:

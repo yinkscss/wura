@@ -28,7 +28,7 @@ How it works:
 
 **Fallback: Dynamic.** Dynamic’s docs now list Stellar as a **Tier 1** native embedded wallet: email OTP (or social) sign-in, a Stellar wallet on signup, plus helpers to sign, send and add a trustline. It also documents agent wallets. Use this if Privy signup or Stellar policy setup gets in the way. Before committing, confirm the wallet is a classic `G…` account, not a contract `C…` account.
 
-**Strong alternative, with a caveat: Crossmint.** Crossmint has official Stellar wallets, email OTP, an official Stellar demo, and the best documented *server signer + spending-limit scopes* for a platform-hosted agent. The catch is that Crossmint wallets are Soroban smart accounts (`C…` addresses). A Stellar builder on X reported that USDC in a passkey / contract wallet can be rejected when cashing out to an exchange. Check Paycrest and any off-ramp against `C…` addresses before choosing Crossmint as the primary path.
+**Strong alternative, with a caveat: Crossmint.** Crossmint has official Stellar wallets, email OTP, an official Stellar demo, and the best documented *server signer + spending-limit scopes* for a platform-hosted agent. The catch is that Crossmint wallets are Soroban smart accounts (`C…` addresses). A Stellar builder on X reported that USDC in a passkey / contract wallet can be rejected when cashing out to an exchange. Check LINK and any off-ramp against `C…` addresses before choosing Crossmint as the primary path.
 
 ## What we checked
 
