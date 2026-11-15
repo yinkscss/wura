@@ -1,6 +1,6 @@
 # Mainnet plan
 
-**Status: decisions D1 to D5 made on 15 November 2026 by Olayinka. Samuel (Otowo) to confirm his path below. Nothing is being built yet.** Change it in this file when the team agrees something different. It builds on [Money side](money-side.md) and replaces its "testnet stays the default" assumption.
+**Status: decisions D1 to D6 made on 15 November 2026 by Olayinka. Samuel (Otowo) to confirm his path below. Nothing is being built yet.** Change it in this file when the team agrees something different. It builds on [Money side](money-side.md) and replaces its "testnet stays the default" assumption.
 
 **The decision: Wura goes fully on Stellar mainnet.** There is no test version of the naira services we use, so the only honest test is the real one, with small amounts, in stages. Preview deployments stay on mock or testnet and can never move real money.
 
@@ -44,6 +44,7 @@ LINK's test keys belong to its partner API, a different product (cedi, and payou
 | D3 | **Swaps are in the mainnet build.** | See M10. |
 | D4 | **Assets: USDC and NGNC.** | XLM is only the reserve and is never shown as something to spend. |
 | D5 | **Beta of 10 people**, raised from about five. | An allowlist by email, with caps at or below the example caps (₦75,000 and $50 per payment, ₦200,000 and $200 a day), lowered for the first week. |
+| D6 | **We wait for LINK.** | Nobody outside Olayinka and Otowo's own wallets (Stage 3) uses real money until LINK answers in writing on its Nigerian licence and the terms are written. That includes the 10-person beta. Get legal advice before opening up. |
 
 **Conditions on D2.** Today the agent key is derived from one secret (`AGENT_KEY_SECRET`) and the user's ID, so a leak would let someone sign payments for every opted-in account. Stellar can't cap an amount on chain, so the server caps are the only limit. I recommend these before any real money goes through a chat approval (Stage 3). Olayinka to confirm or change:
 1. Separate secret for Production, never shared with Preview or testnet.
@@ -51,12 +52,6 @@ LINK's test keys belong to its partner API, a different product (cedi, and payou
 3. Lower per-payment and daily caps for chat approvals than for web approvals.
 4. The user can switch it off from the web at any time, and the server reads the account's signers from Horizon before every chat payment (it does today), not a flag in the database.
 5. Chat approvals only for allowlisted users. A failed or odd approval pings the owner.
-
-**Still open:**
-
-| # | Question | Recommendation |
-| --- | --- | --- |
-| D6 | When can real users beyond the beta come in? | Not before LINK answers on its Nigerian licence and the terms are written. This is a legal question; get advice before opening up. |
 
 **Circle's mainnet USDC issuer.** `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` (asset code `USDC`). Read on 15 November 2026 from Circle's [USDC contract addresses](https://developers.circle.com/stablecoins/usdc-contract-addresses) page, which also lists the testnet issuer `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` that the app uses today. The code already carries the mainnet one in `routing.ts` and `link.ts` for quotes. Recheck the page when the build starts.
 
@@ -127,7 +122,7 @@ Done when: a real $1 swap and a small naira swap both go through, the log shows 
 | 1. Mock end to end | Browser check of the mock flow. Done on 15 November: sign-in, limits from the partner, caps refused, cash-out preview. Repeat after each change to those screens. | Nothing |
 | 2. Mainnet, no money | Read-only checks with a throwaway wallet: partner sign-in, order, status, balances, destination checks. | M1, M2 |
 | 3. Mainnet, small real money | $1 stable transfer. A ₦20,000 deposit and a ₦10,000 withdrawal through LINK, timed. A payment link paid from another wallet. A $1 swap and a small naira swap. One chat approval, once the D2 conditions are in. Olayinka and Otowo only, their own wallets. | Both agree in chat. M1 to M6 |
-| 4. Allowlist beta | 10 known people, low caps, the kill switch tested once on purpose. | LINK's licence answer, M7, M8, M10, M11 |
+| 4. Allowlist beta | 10 known people, low caps, the kill switch tested once on purpose. | LINK's written licence answer (D6), M7, M8, M10, M11 |
 | 5. Wider | More users, higher caps. | D6 |
 
 ## Risks to watch
