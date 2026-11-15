@@ -91,11 +91,11 @@ export function sendPreviewCardHtml(baseUrl: string, opts: { demo?: CardPreview 
       <div><dt>Left today after this</dt><dd id="left"></dd></div>
       <div><dt>Per-payment cap</dt><dd id="cap"></dd></div>
     </dl>
+    <div class="note hide" id="note"></div>
     <div class="act" id="act">
       <button class="go" id="approve">Approve</button>
       <div class="row"><span id="timer">Nothing moves until you approve.</span><button class="link" id="cancel">Cancel</button></div>
     </div>
-    <div class="note hide" id="note"></div>
     <div class="state ok" id="s-ok"><div class="ic">✓</div><div><b id="ok-t"></b><small id="ok-s"></small></div></div>
     <div class="state mute" id="s-mute"><div class="ic">–</div><div><b id="mute-t"></b><small id="mute-s"></small></div></div>
     <div class="state bad" id="s-bad"><div class="ic">!</div><div><b id="bad-t"></b><small id="bad-s"></small></div></div>
@@ -145,7 +145,9 @@ export function sendPreviewCardHtml(baseUrl: string, opts: { demo?: CardPreview 
       const r = await call();
       const text = (r.content && r.content[0] && r.content[0].text) || "";
       if (r.isError) { show("bad", "Not sent", text, true); return; }
-      show("ok", "Sent " + p.amount + " USDC to " + p.to, text);
+      const sc = r.structuredContent || {};
+      show("ok", "Sent " + p.amount + " USDC to " + p.to, sc.reference ? "Reference " + sc.reference.slice(0, 12) + (sc.reference.length > 12 ? "…" : "") : text);
+      if (sc.explorerUrl) { const b = $("open"); b.textContent = "View on Stellar"; b.dataset.url = sc.explorerUrl; b.classList.remove("hide"); }
     } catch (e) {
       $("approve").disabled = false; $("approve").textContent = "Approve " + p.amount + " USDC";
       $("timer").textContent = "That didn’t go through. Try again.";
@@ -154,8 +156,8 @@ export function sendPreviewCardHtml(baseUrl: string, opts: { demo?: CardPreview 
   if (DEMO) {
     theme(new URLSearchParams(location.search).get("theme") || "light");
     render(DEMO);
-    $("open").onclick = () => window.open(DEMO.approveUrl, "_blank");
-    $("approve").onclick = () => approve(() => new Promise((r) => setTimeout(() => r({ content: [{ type: "text", text: "Reference MOCK-C4EB3BFCA4F8" }] }), 900)));
+    $("open").onclick = () => window.open($("open").dataset.url || DEMO.approveUrl, "_blank");
+    $("approve").onclick = () => approve(() => new Promise((r) => setTimeout(() => r({ content: [{ type: "text", text: "Sent" }], structuredContent: { reference: "12fc3141f27b6f8dd4b2d6899b16c757", explorerUrl: "https://stellar.expert/explorer/testnet/tx/12fc3141f27b6f8dd4b2d6899b16c757a3f728e2312445240cf03b218b495f0d" } }), 900)));
   } else {
     const { App } = await import("${baseUrl}/mcp-assets/app");
     const app = new App({ name: "Wura send preview", version: "0.2.0" });
@@ -164,7 +166,7 @@ export function sendPreviewCardHtml(baseUrl: string, opts: { demo?: CardPreview 
       code = (result._meta && result._meta.approvalCode) || null;
       if (result.structuredContent && result.structuredContent.intentId) render(result.structuredContent);
     };
-    const openWura = async () => { try { await app.openLink({ url: p.approveUrl }); } catch (e) {} };
+    const openWura = async () => { try { await app.openLink({ url: $("open").dataset.url || p.approveUrl }); } catch (e) {} };
     $("open").onclick = openWura;
     $("approve").onclick = () => p && !p.inChat ? openWura() : approve(() => app.callServerTool({ name: "approve_send", arguments: { intentId: p.intentId, approvalCode: code || "" } }));
     await app.connect();

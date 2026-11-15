@@ -201,7 +201,7 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string, opts: 
             }
             const a = res.activity;
             const where = a.explorerUrl ? `View it on Stellar: ${a.explorerUrl}` : `Reference ${a.txRef ?? "n/a"}${res.mock ? " (mock, nothing was broadcast)" : ""}.`;
-            return reply(`Sent ${a.amount} ${a.detail.replace(/^To /, "to ")}. ${where}`);
+            return { ...reply(`Sent ${a.amount} ${a.detail.replace(/^To /, "to ")}. ${where}`), structuredContent: { reference: a.txRef ?? "", explorerUrl: a.explorerUrl ?? "" } };
           } catch (err) {
             if (err instanceof ApiFailure) return reply(`${err.message} You can open it in Wura instead.`, true);
             throw err;
