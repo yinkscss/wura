@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Account, Asset, BASE_FEE, Keypair, Memo, Networks, Operation, TransactionBuilder, WebAuth } from "@stellar/stellar-sdk";
-import { checkChallenge, exchangeChallenge, readAnchorToken, signChallenge } from "../../src/server/ramp/sep10.ts";
+import { Account, Asset, BASE_FEE, Keypair, Memo, Networks, Operation, TransactionBuilder, WebAuth, xdr } from "@stellar/stellar-sdk";
+import { checkChallenge, exchangeChallenge, readAnchorToken, signChallenge } from "./sep10";
 
 const NET = Networks.PUBLIC;
 const server = Keypair.random();
@@ -10,11 +10,17 @@ const HOME = "ngnc.online";
 const WEB = "anchor.ngnc.online";
 const expect = { account: user.publicKey(), signingKey: server.publicKey(), networkPassphrase: NET, homeDomain: HOME, webAuthDomain: WEB };
 
-const good = (opts = {}) =>
+const good = (opts: { server?: Keypair; account?: string; home?: string; timeout?: number; web?: string; memo?: string | null } = {}) =>
   WebAuth.buildChallengeTx(opts.server ?? server, opts.account ?? user.publicKey(), opts.home ?? HOME, opts.timeout ?? 300, NET, opts.web ?? WEB, opts.memo ?? null);
 
 /** A hand-built "challenge" so we can break one rule at a time. */
-function forged({ sequence = "-1", ops, window = 300, memo, signer = server } = {}) {
+function forged({
+  sequence = "-1",
+  ops,
+  window = 300,
+  memo,
+  signer = server,
+}: { sequence?: string; ops?: xdr.Operation[]; window?: number; memo?: Memo; signer?: Keypair } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const b = new TransactionBuilder(new Account(server.publicKey(), sequence), {
     fee: BASE_FEE,
@@ -102,7 +108,7 @@ test("signChallenge attaches only the user's own signature", () => {
   assert.throws(() => signChallenge({ checked, networkPassphrase: NET, account: user.publicKey(), signatureHex: "abc" }), /not a wallet signature/);
 });
 
-const jwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`;
+const jwt = (claims: unknown) => `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`;
 
 test("reads the anchor token only for this account and only while valid", () => {
   const exp = Math.floor(Date.now() / 1000) + 600;
@@ -115,13 +121,13 @@ test("reads the anchor token only for this account and only while valid", () => 
 
 test("exchangeChallenge posts the signed challenge and checks the reply", async () => {
   const exp = Math.floor(Date.now() / 1000) + 600;
-  let sent;
+  let sent: unknown;
   const ok = await exchangeChallenge({
     webAuthEndpoint: "https://anchor.ngnc.online/auth",
     signedXdr: "AAAA",
     account: user.publicKey(),
     fetch: async (url, init) => {
-      sent = { url: String(url), method: init.method, body: JSON.parse(init.body) };
+      sent = { url: String(url), method: init?.method, body: JSON.parse(String(init?.body)) };
       return Response.json({ token: jwt({ sub: user.publicKey(), exp }) });
     },
   });

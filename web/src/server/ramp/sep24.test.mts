@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fromMinor, getInfo, getTransfer, startInteractive, toMinor } from "../../src/server/ramp/sep24.ts";
+import { fromMinor, getInfo, getTransfer, startInteractive, toMinor } from "./sep24";
 
 const SERVER = "https://anchor.ngnc.online/sep24";
-const json = (body, status = 200) => async () => Response.json(body, { status });
+const json = (body: unknown, status = 200) => async () => Response.json(body, { status });
 
 test("amounts convert without floating point drift", () => {
   assert.equal(toMinor("20000.0"), 2_000_000);
@@ -34,7 +34,7 @@ test("getInfo reads the limits LINK published on 13 Nov 2026", async () => {
   await assert.rejects(getInfo(SERVER, "NGNC", { fetch: json({ error: "down" }, 503) }), /503.*down/);
 });
 
-const start = (reply, kind = "deposit") =>
+const start = (reply: typeof fetch, kind: "deposit" | "withdraw" = "deposit") =>
   startInteractive(
     kind,
     { transferServer: SERVER, homeDomain: "ngnc.online", token: "tok", assetCode: "NGNC", assetIssuer: "GISSUER", account: "GUSER", amount: 2_000_000 },
@@ -42,9 +42,9 @@ const start = (reply, kind = "deposit") =>
   );
 
 test("startInteractive sends the right request and returns the hosted page", async () => {
-  let seen;
+  let seen = { url: "", auth: "", body: null as unknown };
   const out = await start(async (url, init) => {
-    seen = { url: String(url), auth: init.headers.Authorization, body: JSON.parse(init.body) };
+    seen = { url: String(url), auth: (init?.headers as Record<string, string>).Authorization, body: JSON.parse(String(init?.body)) };
     return Response.json({ type: "interactive_customer_info_needed", id: "abc", url: "https://anchor.ngnc.online/sep24/webapp?t=1" });
   });
   assert.deepEqual(out, { id: "abc", url: "https://anchor.ngnc.online/sep24/webapp?t=1" });
@@ -54,7 +54,7 @@ test("startInteractive sends the right request and returns the hosted page", asy
 });
 
 test("startInteractive refuses a page off the anchor's domain", async () => {
-  const page = (url) => json({ type: "interactive_customer_info_needed", id: "abc", url });
+  const page = (url: string) => json({ type: "interactive_customer_info_needed", id: "abc", url });
   await assert.rejects(start(page("https://evil.example/kyc")), /own domain/);
   await assert.rejects(start(page("http://anchor.ngnc.online/x")), /own domain/);
   await assert.rejects(start(page("https://ngnc.online.evil.example/x")), /own domain/);
@@ -63,7 +63,7 @@ test("startInteractive refuses a page off the anchor's domain", async () => {
   await assert.rejects(start(json({ error: "bad token" }, 403)), /403.*bad token/);
 });
 
-const transfer = (t) => getTransfer({ transferServer: SERVER, token: "tok", id: "abc" }, { fetch: json({ transaction: { id: "abc", ...t } }) });
+const transfer = (t: Record<string, unknown>) => getTransfer({ transferServer: SERVER, token: "tok", id: "abc" }, { fetch: json({ transaction: { id: "abc", ...t } }) });
 
 test("getTransfer maps anchor statuses to plain states", async () => {
   assert.equal((await transfer({ kind: "deposit", status: "incomplete" })).state, "waiting_for_you");

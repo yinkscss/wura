@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Networks } from "@stellar/stellar-sdk";
-import { AnchorConfigError, loadAnchor, parseTomlTopLevel, validateAnchorToml } from "../../src/server/ramp/sep1.ts";
+import { AnchorConfigError, loadAnchor, parseTomlTopLevel, validateAnchorToml } from "./sep1";
 
 const KEY = "GCQLPBWOQ5PAJYEEQBE7GDSY7X3LCYKFEBKOCNF3OUA6F74ORK74HVSQ";
 const PIN = { homeDomain: "ngnc.online", networkPassphrase: Networks.PUBLIC, signingKey: KEY };
@@ -13,8 +13,8 @@ TRANSFER_SERVER_SEP0024="https://anchor.ngnc.online/sep24"
 [DOCUMENTATION]
 SIGNING_KEY="GASBV6W7GGED66MXEVC7YZHTWWYMSVYEY35USF2HJZBLABLYIFQGXZY6"
 `;
-const withLine = (name, value) => TOML.replace(new RegExp(`^${name}=.*$`, "m"), `${name}="${value}"`);
-const check = (toml) => validateAnchorToml(parseTomlTopLevel(toml), PIN);
+const withLine = (name: string, value: string) => TOML.replace(new RegExp(`^${name}=.*$`, "m"), `${name}="${value}"`);
+const check = (toml: string) => validateAnchorToml(parseTomlTopLevel(toml), PIN);
 
 test("reads endpoints from a good config", () => {
   assert.deepEqual(check(TOML), {
