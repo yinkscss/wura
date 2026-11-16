@@ -144,7 +144,7 @@ Built (code, not yet tried with real money): Stellar DEX only, as a strict-send 
 
 ## Stage 2 results (17 November)
 
-Production runs `MONEY_MODE=mainnet`. `MONEY_KILL=1` is meant to be on, but no screen reports it; confirm in Vercel. The first mainnet build was refused at boot because `TESTNET_CONTACTS` and `AGENT_KEY_SECRET` were still set for Production. Both were removed, and the next build passed.
+Production runs `MONEY_MODE=mainnet`. `MONEY_KILL=1` is on (Olayinka checked it in Vercel; no screen reports it). The first mainnet build was refused at boot because `TESTNET_CONTACTS` and `AGENT_KEY_SECRET` were still set for Production. Both were removed, and the next build passed.
 
 - **Mainnet mode, caps, balances.** Pass. `/api/overview` reports mainnet, ₦18,750 per payment, ₦50,000 a day, and $12 per payment, $50 a day. The wallet status reads Circle's mainnet USDC issuer. Olayinka's wallet doesn't exist on mainnet yet (Horizon 404), so ₦0 and $0 are right. Setup waits for Stage 3, since sponsoring spends treasury XLM.
 - **Destination checks.** Pass. The real `checkDestination` ran against live mainnet accounts:
