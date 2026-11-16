@@ -128,6 +128,25 @@ For the screen (Olayinka's): on `needs_partner_signin`, sign `hash` with the sam
 
 What blocks a real top-up in the app: the app runs on testnet and the partner is on mainnet. A user's wallet has no mainnet account or trustline, so `order` refuses with "Your wallet isn't set up to receive naira from the naira partner yet." That is deliberate: nobody should pay naira for money that can't be delivered. A cash-out is refused the same way, because the wallet holds nothing on mainnet.
 
+### Stored sign-ins, stored transfers and the reconcile job (16 November 2026)
+
+So that a restart loses nothing, the partner sign-in and every top-up and cash-out are stored in Postgres (`ramp_sessions`, `ramp_transfers` in `db.ts`). Without `DATABASE_URL` nothing is stored and the mock works as before.
+
+- **Partner sign-in.** Stored sealed with AES-256-GCM (`ramp/vault.ts`), with the user id and the service bound in, so a row copied to another user won't open. The key is `RAMP_TOKEN_KEY` (32 characters or more, Production only, different from every other secret). Without it the sign-in lives in the cookie only. To rotate: set the new value, raise `RAMP_TOKEN_KEY_VERSION` by one, and keep the old value as `RAMP_TOKEN_KEY_V<old version>` for a day. The cookie is still used first; the stored sign-in covers a restart or another device.
+- **Transfers.** A row is written when the partner opens its page, before the user is sent there. If it can't be written the user isn't sent. The partner's own id is unique, so a retry can't create a second row. No identity details, bank details or payment memo are stored, and tokens and memos are never logged.
+- **History.** When a transfer ends, one entry goes into the user's history ("Naira top-up arrived", "Cash-out paid to your bank account", and so on). It is written by whoever claims it first, the user's status read or the job, once only. A page that was opened and left to expire is not written to the history.
+
+| Route | What it does |
+| --- | --- |
+| `GET /api/funding/naira/transfers` | The signed-in user's latest top-ups and cash-outs as stored, newest first, with the plain state and message. Lets a screen pick up after a restart. Empty in mock mode. |
+| `GET /api/funding/reconcile` | The reconcile job. Scheduler only: needs `Authorization: Bearer $CRON_SECRET`, and answers 404 without it. Safe to run twice. |
+
+The job looks at every open transfer, least recently checked first, reads it from the partner with the stored sign-in, and closes the ones that have ended. It answers counts only: `checked`, `done`, `failed`, `open`, `unreadable`, `flagged`, `errors`, and `stuck { topups, cashouts, cashoutsInProgress, oldest }`.
+
+**The limit.** The partner sign-in lasts about a day and the job can't sign in for the user. A transfer still open after 24 hours is flagged as stuck and left as it is; it is never guessed to be done or failed. `stuck` is the number to alert on (`stuckTransfers()` in `ramp/records.ts`). `cashoutsInProgress` counts cash-outs the partner was already working on, where money may have left the wallet: those need a person and the runbook. A flagged transfer leaves the count as soon as it is closed, which happens the next time its owner signs in to the partner and it is read. Whether the partner can push status updates to us, which would remove this limit, is one of the open questions sent to it.
+
+Checked: unit tests for the sealing and the job, and the real queries run against an in-memory Postgres with the real schema. Not checked: against the staging database, or with a real transfer.
+
 ## Plan, in order
 
 The list below is the original plan. Step 1 is no longer needed to build, step 3 is done, and step 4 is done up to "open the page and read status" against the dollar anchor.

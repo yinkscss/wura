@@ -5,17 +5,34 @@ import { checkLimits, EXAMPLE_LIMITS } from "../money";
 import type { Session } from "../session";
 import { wallet } from "../store";
 import { linkRamp } from "./link";
+import { statusMessage } from "./messages";
 import { mockRamp } from "./mock";
+import { logAfterStatus } from "./reconcile";
+import { saveSession, storedToken, userTransfers } from "./records";
 import type { RampBounds, RampCurrency, RampInfo, RampProvider } from "./types";
 
 /**
  * The naira partner in use. RAMP_PROVIDER=mock (default) keeps everything
  * fictional. RAMP_PROVIDER=link uses the live partner on Stellar mainnet:
- * limits, partner sign-in, starting a top-up and its status. Cash-outs through
- * it are still refused (see ./link.ts).
+ * limits, partner sign-in, starting a top-up or a cash-out and its status
+ * (see ./link.ts). Partner sign-ins and transfers are stored (./records.ts).
  */
 export function ramp(): RampProvider {
   return process.env.RAMP_PROVIDER === "link" ? linkRamp : mockRamp;
+}
+
+/**
+ * The partner sign-in to use: the browser's cookie, or the stored one when the
+ * cookie is gone (another device, or a restart). Live partner only.
+ */
+async function tokenFor(s: Session, service: RampCurrency, cookieToken: string | undefined) {
+  if (cookieToken || !ramp().live) return cookieToken;
+  try {
+    return (await storedToken({ userId: s.userId, address: s.address }, service)) ?? undefined;
+  } catch (err) {
+    console.error("[ramp] stored sign-in", err instanceof Error ? err.message : "failed");
+    return undefined;
+  }
 }
 
 /** Wura's own cap per top-up while this is new. Example figures; the real amounts aren't decided. */
@@ -80,7 +97,7 @@ export async function startTopUp(s: Session, input: { amount: number; receive: R
   if (max !== null && amount > max) {
     throw new ApiFailure("TRIAL_LIMIT", `While naira top-ups are new, each one is capped at ${show(max, limits.currency)}.`, 403);
   }
-  return ramp().startTopUp(s, { amount, receive: input.receive, partnerToken: input.partnerToken });
+  return ramp().startTopUp(s, { amount, receive: input.receive, partnerToken: await tokenFor(s, input.receive, input.partnerToken) });
 }
 
 /**
@@ -94,7 +111,7 @@ export async function startCashOut(s: Session, input: { amount: number; from: Ra
   // The mock has no partner page: it answers the example preview.
   if (!p.startCashOut) return previewCashOut(s, { amount: input.amount });
   const amount = checkCashOut(s, await cashOutLimits(input.from), input.amount);
-  return p.startCashOut(s, { amount, from: input.from, partnerToken: input.partnerToken });
+  return p.startCashOut(s, { amount, from: input.from, partnerToken: await tokenFor(s, input.from, input.partnerToken) });
 }
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
@@ -103,7 +120,10 @@ export async function cashOutStatus(s: Session, input: { id: string; from: RampC
   const p = ramp();
   if (!p.cashOutStatus) noPartnerSignIn();
   if (!ID.test(input.id)) throw new ApiFailure("BAD_REQUEST", "That cash-out wasn't found.", 404);
-  return p.cashOutStatus(s, input);
+  const out = await p.cashOutStatus(s, { ...input, partnerToken: await tokenFor(s, input.from, input.partnerToken) });
+  // The route for this isn't wallet-locked, so the history entry can be written here.
+  if ("state" in out && (out.state === "done" || out.state === "failed")) await logAfterStatus({ provider: p.id, service: input.from, anchorTxId: input.id });
+  return out;
 }
 
 /**
@@ -115,7 +135,7 @@ export async function cashOutStatus(s: Session, input: { id: string; from: RampC
 export async function cashOutPayment(s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }) {
   const p = ramp();
   if (!p.cashOutPayment || !ID.test(input.id)) return null;
-  return p.cashOutPayment(s, input);
+  return p.cashOutPayment(s, { ...input, partnerToken: await tokenFor(s, input.from, input.partnerToken) });
 }
 
 function noPartnerSignIn(): never {
@@ -126,14 +146,42 @@ function noPartnerSignIn(): never {
 export async function finishPartnerSignIn(s: Session, input: { receive: RampCurrency; challenge: unknown; signature: unknown }) {
   const p = ramp();
   if (!p.finishSignIn) noPartnerSignIn();
-  return p.finishSignIn(s, input);
+  const session = await p.finishSignIn(s, input);
+  try {
+    // Stored sealed, so a restart or another device doesn't lose the sign-in. The cookie works without it.
+    await saveSession({ userId: s.userId, address: s.address }, input.receive, session);
+  } catch (err) {
+    console.error("[ramp] store sign-in", err instanceof Error ? err.message : "failed");
+  }
+  return session;
 }
 
 export async function topUpStatus(s: Session, input: { id: string; receive: RampCurrency; partnerToken?: string }) {
   const p = ramp();
   if (!p.topUpStatus) noPartnerSignIn();
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(input.id)) throw new ApiFailure("BAD_REQUEST", "That top-up wasn't found.", 404);
-  return p.topUpStatus(s, input);
+  const out = await p.topUpStatus(s, { ...input, partnerToken: await tokenFor(s, input.receive, input.partnerToken) });
+  if ("state" in out && (out.state === "done" || out.state === "failed")) await logAfterStatus({ provider: p.id, service: input.receive, anchorTxId: input.id });
+  return out;
+}
+
+/**
+ * The user's latest top-ups and cash-outs as stored, newest first, so a screen
+ * can pick up where it left off after a restart. Read the live status of one
+ * with topUpStatus or cashOutStatus. Empty in mock mode.
+ */
+export async function myTransfers(s: Session) {
+  if (!ramp().live) return [];
+  return (await userTransfers(s.userId)).map((t) => ({
+    id: t.anchorTxId,
+    kind: t.kind,
+    currency: t.service,
+    amount: t.amount,
+    state: t.state,
+    message: statusMessage(t.kind, t.anchorStatus),
+    txRef: t.stellarTxId,
+    startedAt: t.createdAt,
+  }));
 }
 
 /**
