@@ -124,7 +124,7 @@ export type Me = {
   kycStatus: KycStatus;
 };
 
-/** Testnet wallet readiness (MONEY_MODE=testnet). */
+/** Wallet readiness on a live network: activated, with the trustlines it needs. */
 export type WalletStatus = {
   address: string;
   network: "testnet" | "mainnet";
@@ -132,6 +132,13 @@ export type WalletStatus = {
   xlm: string;
   usdc: number | null;
   hasTrustline: boolean;
+  /** Naira (NGNC) balance in kobo. Null off mainnet or without a trustline. */
+  ngn: number | null;
+  hasNgncTrustline: boolean;
+  /** True when this network has a naira asset and the wallet must hold it. */
+  needsNgnc: boolean;
+  /** True when Wura's reserve sets the wallet up (no XLM needed from the user). */
+  sponsored: boolean;
   ready: boolean;
   usdcIssuer: string;
   usingCircleUsdc: boolean;
@@ -165,6 +172,7 @@ export type ApiErrorCode =
   | "TRIAL_LIMIT"
   | "BAD_REQUEST"
   | "SIGNING_UNAVAILABLE" | "MONEY_PAUSED"
+  | "NOT_INVITED"
   | "SITE_NOT_ALLOWED"
   | "SITE_UNSUPPORTED"
   | "CONTRACT_NOT_FOUND"
