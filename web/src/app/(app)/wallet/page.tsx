@@ -57,6 +57,7 @@ export default function WalletPage() {
         actions={
           <>
             <ButtonLink href="/onboarding" variant="outline-blue">Fund</ButtonLink>
+            <ButtonLink href="/cash-out" variant="outline-blue">Cash out</ButtonLink>
             <ButtonLink href={`/chat?prompt=${encodeURIComponent("Make a payment link for ₦15,000")}`}>New payment link</ButtonLink>
           </>
         }

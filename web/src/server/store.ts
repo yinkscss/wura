@@ -67,9 +67,16 @@ export type WalletState = {
    * sha256 hex only. Kept apart from the intent so it never reaches a browser.
    */
   cardCodes: Record<string, string>;
+  /**
+   * Cash-outs already paid from this wallet: the partner's cash-out id to the
+   * Stellar transaction hash. Written under the wallet lock just before the
+   * payment is submitted, so a second approval or a second tab can't pay the
+   * same cash-out twice (server/cashout.ts).
+   */
+  cashOutPaid?: Record<string, string>;
 };
 
-const g = globalThis as unknown as { __agentStore?: Map<string, WalletState> };
+const g =globalThis as unknown as { __agentStore?: Map<string, WalletState> };
 const store = (g.__agentStore ??= new Map());
 
 export function lagosDay(ts = Date.now()) {
@@ -107,6 +114,7 @@ function seedTestnet(): WalletState {
     siteRequests: new Map(),
     siteActions: new Map(),
     cardCodes: {},
+    cashOutPaid: {},
   };
 }
 
@@ -225,6 +233,8 @@ function serialize(w: WalletState): Stored {
     sends: prune(w.sends, (v) => v.expiresAt),
     siteRequests: prune(w.siteRequests, (v) => v.createdAt),
     siteActions: prune(w.siteActions, (v) => v.expiresAt),
+    // Never pruned: it is what stops a cash-out being paid twice.
+    cashOutPaid: w.cashOutPaid ?? {},
     // Only codes for sends that are still waiting.
     cardCodes: Object.fromEntries(Object.entries(w.cardCodes ?? {}).filter(([id]) => w.sends.get(id)?.status === "pending")),
   };
@@ -243,6 +253,7 @@ function deserialize(s: Stored, activity: Activity[]): WalletState {
     links: s.links ?? [],
     contacts: s.contacts ?? [],
     cardCodes: s.cardCodes ?? {},
+    cashOutPaid: s.cashOutPaid ?? {},
   };
 }
 

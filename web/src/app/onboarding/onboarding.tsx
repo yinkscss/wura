@@ -4,15 +4,19 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, ClientApiError } from "@/lib/api";
-import { naira } from "@/lib/format";
+import { naira, usdcNumber } from "@/lib/format";
 import { BackIcon, BankIcon, ChatIcon, CheckIcon, CopyIcon, IdIcon, WalletIcon } from "@/components/icons";
 import { copyText } from "@/components/money-cards";
 import { PartnerNote } from "@/components/partner-note";
+import { isPartnerPage, isPartnerSignIn, PartnerPageStep, PartnerSignInStep, TransferStatusCard, useTransferStatus } from "@/components/partner-flow";
 import { Starfield } from "@/components/starfield";
-import type { RampInfo } from "@/server/ramp/types";
+import type { PartnerSignIn, RampCurrency, RampInfo } from "@/server/ramp/types";
 import { Button, ButtonLink, Card, Pill, Wordmark, buttonClass, cx } from "@/components/ui";
 
-type View = "choose" | "usdc" | "naira-verify" | "naira-amount" | "naira-transfer" | "done";
+type View = "choose" | "usdc" | "naira-verify" | "naira-amount" | "naira-transfer" | "naira-live" | "done";
+
+/** A top-up open on the live partner's page. */
+type LiveTopUp = { id: string; url: string; amount: number; receive: RampCurrency };
 
 type Order = {
   id: string;
@@ -31,6 +35,7 @@ export function Onboarding() {
   const [view, setView] = useState<View>("choose");
   const [doneVia, setDoneVia] = useState<"usdc" | "naira">("usdc");
   const [order, setOrder] = useState<Order | null>(null);
+  const [live, setLive] = useState<LiveTopUp | null>(null);
   // Limits and the identity-check mode come from the naira partner, not from this file.
   const [ramp, setRamp] = useState<RampInfo | null>(null);
   useEffect(() => {
@@ -134,6 +139,22 @@ export function Onboarding() {
                   setOrder(o);
                   setView("naira-transfer");
                 }}
+                onLive={(t) => {
+                  setLive(t);
+                  setView("naira-live");
+                }}
+              />
+            </Panel>
+          )}
+
+          {view === "naira-live" && live && (
+            <Panel key="nl">
+              <NairaLive
+                topUp={live}
+                onDone={() => {
+                  setDoneVia("naira");
+                  setView("done");
+                }}
               />
             </Panel>
           )}
@@ -155,7 +176,9 @@ export function Onboarding() {
               <Headline title="You’re set.">
                 {doneVia === "usdc"
                   ? "Once USDC lands at your address, ask Wura for anything. Example balances are loaded so you can try every flow now."
-                  : "When the transfer clears, your naira shows up in the wallet. Example balances are loaded so you can try every flow now."}
+                  : live
+                    ? "The partner tells us when your money arrives, and it shows up in your wallet and history. You can check it any time on the wallet page."
+                    : "When the transfer clears, your naira shows up in the wallet. Example balances are loaded so you can try every flow now."}
               </Headline>
               <div className="mx-auto mt-10 grid max-w-[760px] gap-5 sm:grid-cols-2">
                 <Card className="flex flex-col gap-4 p-7 text-blue">
@@ -362,11 +385,28 @@ function NairaVerify({ onBack, onVerified }: { onBack: () => void; onVerified: (
   );
 }
 
-const QUICK_AMOUNTS = [5_000, 10_000, 20_000, 50_000];
+const QUICK_AMOUNTS: Record<RampCurrency, number[]> = { NGN: [5_000, 10_000, 20_000, 50_000], USDC: [5, 10, 20, 30] };
+const SYMBOL: Record<RampCurrency, string> = { NGN: "₦", USDC: "$" };
+/** Customer wording: naira as ₦, dollars as $. No token names. */
+const show = (minor: number, c: RampCurrency) => (c === "NGN" ? naira(minor) : `$${usdcNumber(minor)}`);
 
-function NairaAmount({ ramp, onBack, onOrder }: { ramp: RampInfo | null; onBack: () => void; onOrder: (o: Order) => void }) {
-  const { min, max } = ramp?.limits.topUp ?? { min: null, max: null };
-  const quick = QUICK_AMOUNTS.filter((v) => (min === null || v * 100 >= min) && (max === null || v * 100 <= max));
+function NairaAmount({
+  ramp,
+  onBack,
+  onOrder,
+  onLive,
+}: {
+  ramp: RampInfo | null;
+  onBack: () => void;
+  onOrder: (o: Order) => void;
+  onLive: (t: LiveTopUp) => void;
+}) {
+  // What the top-up lands as: naira, or dollars (the partner's dollar service). The user always pays naira.
+  const [receive, setReceive] = useState<RampCurrency>("NGN");
+  const option = ramp?.options.find((o) => o.currency === receive) ?? ramp?.limits;
+  const cur = option?.currency ?? "NGN";
+  const { min, max } = option?.topUp ?? { min: null, max: null };
+  const quick = QUICK_AMOUNTS[cur].filter((v) => (min === null || v * 100 >= min) && (max === null || v * 100 <= max));
   const [amount, setAmount] = useState("");
   const [touched, setTouched] = useState(false);
   // Start on the partner's minimum (or the first quick amount) until the user types.
@@ -374,20 +414,20 @@ function NairaAmount({ ramp, onBack, onOrder }: { ramp: RampInfo | null; onBack:
   const shown = touched ? amount : start ? start.toLocaleString("en-NG") : "";
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [signIn, setSignIn] = useState<PartnerSignIn | null>(null);
   const minor = Math.round(Number(shown.replace(/[^\d.]/g, "")) * 100) || 0;
   const outOfRange = (min !== null && minor < min) || (max !== null && minor > max);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function begin() {
     setErr(null);
     setBusy(true);
     try {
-      const o = await api<unknown>("/api/funding/naira/order", { amount: minor });
-      if (!isMockOrder(o)) {
-        setErr("Naira top-ups through the partner's own page aren't switched on in this screen yet. Nothing was charged.");
-        return;
-      }
-      onOrder(o);
+      const o = await api<unknown>("/api/funding/naira/order", { amount: minor, receive: cur });
+      if (isPartnerSignIn(o)) return setSignIn(o);
+      setSignIn(null);
+      if (isPartnerPage(o)) return onLive({ id: o.id, url: o.url, amount: minor, receive: cur });
+      if (isMockOrder(o)) return onOrder(o);
+      setErr("The partner answered in a way we didn't expect, so nothing was started. Try again.");
     } catch (e) {
       setErr(e instanceof ClientApiError ? e.message : "Couldn't start the top-up. Try again.");
     } finally {
@@ -395,13 +435,30 @@ function NairaAmount({ ramp, onBack, onOrder }: { ramp: RampInfo | null; onBack:
     }
   }
 
+  if (signIn) {
+    return (
+      <div className="mx-auto max-w-[620px]">
+        <Headline title="One quick step">The partner asks every wallet to sign in once a day before a top-up.</Headline>
+        <Card className="mt-10 rounded-card-lg p-7 text-blue shadow-deep sm:p-9">
+          <PartnerSignInStep signIn={signIn} onSignedIn={begin} onCancel={() => setSignIn(null)} />
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-[620px]">
-      <Headline title="How much naira?">
+      <Headline title={cur === "USDC" ? "How many dollars?" : "How much naira?"}>
         {ramp?.identityCheck === "partner_page" ? "The partner checks your identity on its own page." : "You’re verified."} While naira top-ups are new, each one has a small trial cap.
       </Headline>
       <Card className="mt-10 rounded-card-lg p-7 text-blue shadow-deep sm:p-9">
-        <form onSubmit={submit} className="flex flex-col gap-5">
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            void begin();
+          }}
+          className="flex flex-col gap-5"
+        >
           <BackLink onClick={onBack} />
           <PartnerNote kind="naira" />
           {ramp?.identityCheck !== "partner_page" && (
@@ -409,10 +466,30 @@ function NairaAmount({ ramp, onBack, onOrder }: { ramp: RampInfo | null; onBack:
               <CheckIcon size={15} /> Identity check passed
             </div>
           )}
+          {ramp && ramp.options.length > 1 && (
+            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-mist p-1.5" role="radiogroup" aria-label="What the top-up lands as">
+              {ramp.options.map((o) => (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={o.currency === cur}
+                  key={o.currency}
+                  onClick={() => {
+                    setReceive(o.currency);
+                    setTouched(false);
+                  }}
+                  className={cx("rounded-xl px-3 py-2.5 text-[13.5px] font-semibold", o.currency === cur ? "bg-white shadow-soft" : "text-muted hover:text-blue")}
+                >
+                  {o.currency === "NGN" ? "Keep it as naira" : "Get dollars"}
+                </button>
+              ))}
+            </div>
+          )}
+          {cur === "USDC" && <p className="-mt-2 text-[13px] text-muted">You pay naira from your bank; the partner sends dollars to your wallet at its rate, shown on its page.</p>}
           <label className="flex flex-col gap-2">
             <span className="text-[13px] font-semibold">Amount</span>
             <div className="flex h-16 items-center rounded-2xl bg-mist px-5 focus-within:bg-white focus-within:shadow-[inset_0_0_0_1.5px_var(--color-pink)]">
-              <span className="text-[28px] font-bold text-soft">₦</span>
+              <span className="text-[28px] font-bold text-soft">{SYMBOL[cur]}</span>
               <input
                 id="amount"
                 inputMode="numeric"
@@ -437,26 +514,56 @@ function NairaAmount({ ramp, onBack, onOrder }: { ramp: RampInfo | null; onBack:
                 }}
                 className="rounded-full bg-mist px-4 py-2 text-[13px] font-semibold hover:bg-pink/15"
               >
-                {naira(v * 100)}
+                {show(v * 100, cur)}
               </button>
             ))}
           </div>
           {ramp && (
             <p className="text-[13px] text-muted">
-              {min !== null && <>Smallest top-up: {naira(min)}. </>}
-              {max !== null && <>Trial cap per top-up: {naira(max)}.</>}
+              {min !== null && <>Smallest top-up: {show(min, cur)}. </>}
+              {max !== null && <>Trial cap per top-up: {show(max, cur)}.</>}
             </p>
           )}
           {minor > 0 && outOfRange && (
             <p className="text-[13.5px] font-medium text-pink-deep" role="alert">
-              {min !== null && minor < min ? `The smallest top-up is ${naira(min)}.` : `Each top-up is capped at ${naira(max ?? 0)} for now.`}
+              {min !== null && minor < min ? `The smallest top-up is ${show(min, cur)}.` : `Each top-up is capped at ${show(max ?? 0, cur)} for now.`}
             </p>
           )}
           {err && <p className="text-[13.5px] font-medium text-pink-deep" role="alert">{err}</p>}
           <Button type="submit" variant="blue" size="lg" disabled={busy || !ramp || minor <= 0 || outOfRange}>
-            {busy ? "Starting…" : "Get bank transfer details"}
+            {busy ? "Starting…" : ramp?.live ? "Continue to the partner" : "Get bank transfer details"}
           </Button>
         </form>
+      </Card>
+    </div>
+  );
+}
+
+/** A live top-up: the partner's page, then its status until it ends. The server logs the result. */
+function NairaLive({ topUp, onDone }: { topUp: LiveTopUp; onDone: () => void }) {
+  const [returned, setReturned] = useState(false);
+  const { status, signIn, err, refresh } = useTransferStatus(returned ? { kind: "topup", id: topUp.id, currency: topUp.receive } : null);
+  return (
+    <div className="mx-auto max-w-[620px]">
+      <Headline title={returned ? "Your top-up" : "Over to the partner"}>
+        {show(topUp.amount, topUp.receive)} {topUp.receive === "USDC" ? "in dollars" : "in naira"}. You pay by bank transfer on the partner’s page.
+      </Headline>
+      <Card className="mt-10 flex flex-col gap-5 rounded-card-lg p-7 text-blue shadow-deep sm:p-9">
+        <PartnerNote kind="naira" />
+        <PartnerPageStep url={topUp.url} kind="topup" onReturned={() => (returned ? void refresh() : setReturned(true))} />
+        {returned &&
+          (signIn ? (
+            <PartnerSignInStep signIn={signIn} onSignedIn={refresh} />
+          ) : (
+            <>
+              <TransferStatusCard status={status} id={topUp.id} />
+              {err && <p className="text-[13.5px] font-medium text-pink-deep" role="alert">{err}</p>}
+              <div className="flex flex-wrap gap-3">
+                <Button variant="ghost" size="lg" onClick={() => void refresh()}>Check again</Button>
+                <Button size="lg" onClick={onDone}>{status?.state === "done" ? "Continue" : "Leave it running"}</Button>
+              </div>
+            </>
+          ))}
       </Card>
     </div>
   );
@@ -488,7 +595,7 @@ function NairaTransfer({ order, onDone }: { order: Order; onDone: () => void }) 
           ))}
         </dl>
         <p className="rounded-2xl bg-pink/12 p-4 text-[13.5px] font-medium leading-relaxed text-pink-deep">
-          These are mock details for the preview. Don’t send money to them. The live naira partner isn’t connected to this screen yet.
+          These are mock details for the preview. Don’t send money to them. No partner is connected in the preview.
         </p>
         <Button size="lg" onClick={onDone}>Continue</Button>
       </Card>

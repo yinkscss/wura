@@ -166,7 +166,8 @@ export function finishSend(w: WalletState, intent: SendIntent, hash: string) {
   w.spentToday[intent.asset] += intent.amount;
   return log(w, {
     kind: "send",
-    detail: `To ${intent.to.name}`,
+    // A cash-out's second line comes later, when the partner pays the bank (ramp/reconcile.ts).
+    detail: intent.cashOut ? "Sent to the partner for your cash-out" : `To ${intent.to.name}`,
     amount: money(intent.amount, intent.asset),
     status: "done",
     txRef: hash,
@@ -192,8 +193,16 @@ export async function startTestnetSend(s: Session, intent: SendIntent) {
   return { ...needsSignature(s, park(w, tx, "send", intent.id)), intent };
 }
 
-/** The user's wallet signed the hash. Verify, re-check and submit. A repeat never pays twice. */
-export async function submitSigned(s: Session, input: { txId: string; signature: string }) {
+/**
+ * The user's wallet signed the hash. Verify, re-check and submit. A repeat never pays twice.
+ * `cashOut` is the extra check for a cash-out payment (server/cashout.ts): only the
+ * cash-out route passes it, so a cash-out can't be finished through /api/tx/submit.
+ */
+export async function submitSigned(
+  s: Session,
+  input: { txId: string; signature: string },
+  opts: { cashOut?: (w: WalletState, intent: SendIntent, txHash: string) => Promise<void> } = {},
+) {
   const w = wallet(s.userId);
   const p = w.pendingTx.get(String(input.txId));
   if (!p) throw new ApiFailure("INTENT_NOT_FOUND", "That transaction isn't waiting for a signature. Ask again.", 404);
@@ -204,6 +213,7 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
   if (p.kind === "send") {
     intent = w.sends.get(p.intentId ?? "");
     if (!intent) throw new ApiFailure("INTENT_NOT_FOUND", "That payment preview doesn't exist any more.", 404);
+    if (intent.cashOut && !opts.cashOut) throw new ApiFailure("BAD_REQUEST", "Finish this cash-out from the cash-out screen. Nothing was sent.", 409);
   }
   if (p.kind === "swap") {
     quote = w.quotes.get(p.intentId ?? "");
@@ -224,7 +234,8 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
     if (!/^(0x)?[0-9a-fA-F]{128}$/.test(sig) || !verifySignature(s.address, p.hash, sig)) {
       throw new ApiFailure("NOT_APPROVED", "The signature didn't match your wallet, so nothing was sent.", 403);
     }
-    if (intent) await recheckSend(s, w, intent);
+    if (intent?.cashOut) await opts.cashOut!(w, intent, p.hash); // the partner is read again; claims the cash-out
+    else if (intent) await recheckSend(s, w, intent);
     if (quote) await recheckSwap(s, w, quote); // the price itself is held by the transaction's minimum
     signed = attachSignature(p.xdr, s.address, sig);
     p.signedXdr = signed.toXDR();
@@ -248,6 +259,8 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
       throw new ApiFailure("BAD_REQUEST", "We couldn't confirm yet whether that went through. Check again in a moment. It won't be sent twice.", 502);
     }
     p.status = "failed";
+    // Rejected for certain, so nothing left the wallet: the cash-out can be paid again.
+    if (intent?.cashOut && w.cashOutPaid?.[intent.cashOut.id] === p.hash) delete w.cashOutPaid[intent.cashOut.id];
     void alert("submit_failed", `a ${p.kind} (tx ${p.hash.slice(0, 12)}…) was rejected: ${err instanceof Error ? err.message.slice(0, 160) : "unknown"}`, p.hash);
     throw err;
   }
