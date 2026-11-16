@@ -198,7 +198,8 @@ export interface RampProvider {
   /**
    * The exact payment that finishes a cash-out, or null while the partner
    * isn't ready. PartnerSignIn when the partner sign-in is missing, rejected,
-   * or has less than 10 minutes left (so it can't lapse between approve and submit).
+   * or has less than the smaller of 10 minutes and half its lifetime left (so it
+   * can't lapse between approve and submit, and a short sign-in can't loop).
    */
   cashOutPayment?(s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }): Promise<CashOutPayment | PartnerSignIn | null>;
   /** Mock only. Never signs. See the boundaries above. */

@@ -26,7 +26,8 @@ type Payment = import("./ramp/types").CashOutPayment;
 type SignIn = import("./ramp/types").PartnerSignIn;
 const signIn: SignIn = { status: "needs_partner_signin", receive: "NGN", hash: "00", address: "G", challenge: "c", expiresAt: 0 };
 
-const user = Keypair.random().publicKey();
+const userKey = Keypair.random();
+const user = userKey.publicKey();
 const partner = Keypair.random().publicKey();
 const ngnc = assetFor("NGN")!;
 let n = 0;
@@ -305,4 +306,22 @@ test("the partner's fee and what reaches the bank are shown, must add up, and ca
   });
   const u = await C.prepareCashOutPayment(s, { id: "co-1", from: "USDC" }, noToken, du);
   assert.deepEqual(u.cashOut?.receive, { amount: 14_000_00, currency: "NGN" });
+});
+
+test("submitSigned: a lapsed sign-in stops a correctly signed payment before anything is claimed or sent", async () => {
+  const s = session();
+  let answer: Payment | SignIn = pay();
+  const d = deps(s, () => answer);
+  const i = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
+  const r = await C.approveCashOutPayment(s, { intentId: i.id, approve: true }, noToken, d);
+  const p = wallet(s.userId).pendingTx.get(r.txId)!;
+  const signature = userKey.sign(Buffer.from(p.hash, "hex")).toString("hex");
+  answer = signIn;
+  const out = await C.orPartnerSignIn(() => submitSigned(s, { txId: r.txId, signature }, { cashOut: C.cashOutSubmitCheck(s, noToken, d) }));
+  assert.deepEqual(out, signIn);
+  // So the same signature can be posted again after the new sign-in (that retry reaches Horizon, so it isn't run here).
+  assert.equal(p.status, "pending");
+  assert.equal(p.signedXdr, undefined);
+  assert.equal(d.held, null);
+  assert.equal(wallet(s.userId).sends.get(i.id)!.status, "pending");
 });

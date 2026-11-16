@@ -158,7 +158,11 @@ async function readPayment(s: Session, id: string, from: RampCurrency, partnerTo
   const receive = p.receive ?? null;
   if (fee !== null && (!Number.isInteger(fee) || fee < 0 || fee >= p.amount)) throw wrong();
   if (receive !== null && (!Number.isInteger(receive.amount) || receive.amount <= 0)) throw wrong();
-  if (receive !== null && receive.currency === from && receive.amount !== p.amount - (fee ?? 0)) throw wrong();
+  if (receive !== null && receive.currency === from && receive.amount !== p.amount - (fee ?? 0)) {
+    // Numbers only (no memo, no token), so the Stage 3 check can see why LINK's answer was refused.
+    console.error("[cashout] amounts don't add up", { id, amount: p.amount, fee, receive: receive.amount });
+    throw wrong();
+  }
   // Every cash-out is recorded before the user is sent to the partner's page (ramp/link.ts).
   const row = await deps.transfer({ provider: ramp().id, service: from, anchorTxId: id });
   if (!row || row.userId !== s.userId || row.address !== s.address || row.kind !== "cashout") {

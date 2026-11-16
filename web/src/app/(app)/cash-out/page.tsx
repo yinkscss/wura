@@ -289,7 +289,16 @@ function LiveCashOut({ live, onRestart }: { live: Live; onRestart: () => void })
 
       {live.url && !sent && <PartnerPageStep url={live.url} kind="cashout" onReturned={() => (returned ? void refresh() : setReturned(true))} />}
 
-      {returned && signIn && <PartnerSignInStep signIn={signIn} onSignedIn={refresh} />}
+      {returned && signIn && (
+        <PartnerSignInStep
+          signIn={signIn}
+          // A step waiting on a new sign-in carries on after this one, so the wallet isn't asked twice.
+          onSignedIn={async () => {
+            await refresh();
+            if (renew) await resume(renew.then);
+          }}
+        />
+      )}
 
       {renew && !signIn && (
         <div className="flex flex-col gap-3">
