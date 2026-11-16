@@ -1,7 +1,7 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
-import { config } from "./config";
+import { config, moneyLive } from "./config";
 import type { TransactionSql } from "postgres";
 import { dbEnabled, ensureSchema, sql } from "./db";
 import type {
@@ -97,7 +97,8 @@ function seedTestnet(): WalletState {
     quotes: new Map(),
     sends: new Map(),
     links: [],
-    contacts: config.testnetContacts.map((c) => ({ ...c })),
+    // Testnet addresses must never become contacts on mainnet.
+    contacts: config.moneyMode === "testnet" ? config.testnetContacts.map((c) => ({ ...c })) : [],
     kycStatus: "none",
     allowList: [],
     siteRequests: new Map(),
@@ -164,7 +165,7 @@ function rollDay(w: WalletState) {
 }
 
 function freshWallet() {
-  return config.moneyMode === "testnet" ? seedTestnet() : seed();
+  return moneyLive() ? seedTestnet() : seed();
 }
 
 /** The signed-in user's wallet state for this request. */

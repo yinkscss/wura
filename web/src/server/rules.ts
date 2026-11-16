@@ -1,7 +1,7 @@
 import "server-only";
 import type { AgentReply } from "@/lib/types";
 import { money, naira, rate, usdc, usdcNumber } from "@/lib/format";
-import { config } from "./config";
+import { config, moneyLive } from "./config";
 import { ApiFailure } from "./errors";
 import {
   createPaymentLink,
@@ -155,7 +155,7 @@ export async function ruleReply(s: Session, message: string): Promise<AgentReply
     const balances = await getBalances(s);
     const limits = getLimits(s);
     return {
-      text: `${config.moneyMode === "testnet" ? "On testnet you have" : "You have"} ${naira(balances.NGN)} and ${usdcNumber(balances.USDC)} USDC. You can still spend ${money(limits.remainingToday.NGN, "NGN")} and ${usdc(limits.remainingToday.USDC)} today.`,
+      text: `${moneyLive() && config.moneyMode === "testnet" ? "On testnet you have" : "You have"} ${naira(balances.NGN)} and ${usdcNumber(balances.USDC)} USDC. You can still spend ${money(limits.remainingToday.NGN, "NGN")} and ${usdc(limits.remainingToday.USDC)} today.`,
       card: { type: "balance", balances, limits },
     };
   }

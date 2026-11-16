@@ -61,7 +61,7 @@ export function Approve({ params }: { params: Promise<{ id: string }> }) {
       setResult(
         res.mock
           ? { text: `Sent ${usdc(intent.amount)} to ${intent.to.name} (mock — nothing was broadcast).` }
-          : { text: `Sent ${usdc(intent.amount)} to ${intent.to.name} on Stellar testnet.`, href: res.activity.explorerUrl },
+          : { text: `Sent ${usdc(intent.amount)} to ${intent.to.name} on Stellar.`, href: res.activity.explorerUrl },
       );
       void refresh();
     } catch (e) {

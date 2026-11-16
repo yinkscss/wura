@@ -7,36 +7,44 @@ import "server-only";
  * - Auth: Privy email OTP when NEXT_PUBLIC_PRIVY_APP_ID is set, otherwise a
  *   mocked email sign-in (any 6-digit code).
  * - Money: MONEY_MODE=mock (default) signs nothing. MONEY_MODE=testnet sends
- *   real USDC on Stellar testnet. Signing in testnet mode is done by:
+ *   real USDC on Stellar testnet. MONEY_MODE=mainnet is real money; the boot
+ *   checks in network.ts refuse unsafe setups. MONEY_KILL=1 turns every real
+ *   money move off. Signing in testnet mode is done by:
  *     - "privy" (default): the user's Privy Stellar wallet signs in the
  *       browser, our server verifies and submits.
  *     - "server-dev": a throwaway testnet key the server derives per email.
  *       For local testing and team demos without Privy. Testnet only.
  */
-const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
-/** Circle's USDC issuer on Stellar testnet. */
-const CIRCLE_TESTNET_USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+import { CIRCLE_MAINNET_USDC_ISSUER, CIRCLE_TESTNET_USDC_ISSUER, assertBootSafe, killSwitchOn, networkFor, parseMoneyMode } from "./network";
+
+// Refuse to start in an unsafe setup (mainnet in Preview, server-dev on mainnet, ...).
+assertBootSafe(process.env);
+
+const MODE = parseMoneyMode(process.env);
+const NET = networkFor(MODE, process.env);
 
 export const config = {
   privyAppId: process.env.NEXT_PUBLIC_PRIVY_APP_ID || "",
   get authMode(): "privy" | "mock" {
     return this.privyAppId ? "privy" : "mock";
   },
-  moneyMode: (process.env.MONEY_MODE === "testnet" ? "testnet" : "mock") as
-    | "mock"
-    | "testnet",
-  /** Only testnet is supported for real signing in this version. */
-  stellarNetwork: "testnet" as const,
-  horizonUrl: process.env.STELLAR_HORIZON_URL || "https://horizon-testnet.stellar.org",
-  networkPassphrase: TESTNET_PASSPHRASE,
-  friendbotUrl: "https://friendbot.stellar.org",
-  explorerTx: (hash: string) => `https://stellar.expert/explorer/testnet/tx/${hash}`,
+  moneyMode: MODE,
+  /** Which network addresses, links and passphrase point at. Mock mode uses testnet's. */
+  stellarNetwork: NET.name,
+  horizonUrl: NET.horizonUrl,
+  networkPassphrase: NET.passphrase,
+  /** Empty on mainnet: there is no faucet. */
+  friendbotUrl: NET.friendbotUrl,
+  /** "Stellar mainnet" or "Stellar testnet", for messages. */
+  networkLabel: `Stellar ${NET.name}`,
+  explorerTx: (hash: string) => `${NET.explorerBase}/tx/${hash}`,
+  explorerAccount: (address: string) => `${NET.explorerBase}/account/${address}`,
   usdc: {
     code: "USDC",
-    issuer: process.env.STELLAR_USDC_ISSUER || CIRCLE_TESTNET_USDC_ISSUER,
+    issuer: NET.usdcIssuer,
   },
   get usingCircleUsdc() {
-    return this.usdc.issuer === CIRCLE_TESTNET_USDC_ISSUER;
+    return this.usdc.issuer === (this.stellarNetwork === "mainnet" ? CIRCLE_MAINNET_USDC_ISSUER : CIRCLE_TESTNET_USDC_ISSUER);
   },
   testnetSigner: (process.env.TESTNET_SIGNER === "server-dev" ? "server-dev" : "privy") as
     | "privy"
@@ -86,12 +94,27 @@ export const config = {
   },
 };
 
-/** True when real testnet transactions are signed by the user's Privy wallet. */
-export function privySigning() {
-  return config.moneyMode === "testnet" && config.testnetSigner === "privy";
+/** True when money is real on a Stellar network (testnet or mainnet), not mock. */
+export function moneyLive() {
+  return config.moneyMode !== "mock";
 }
 
-/** True when the server signs with a throwaway testnet key (dev only). */
+/** True on mainnet only: real money. */
+export function onMainnet() {
+  return config.moneyMode === "mainnet";
+}
+
+/** True when the kill switch (MONEY_KILL) is on. Read on every call, so it applies at once. */
+export function moneyKilled() {
+  return killSwitchOn(process.env);
+}
+
+/** True when real transactions are signed by the user's Privy wallet. */
+export function privySigning() {
+  return moneyLive() && config.testnetSigner === "privy";
+}
+
+/** True when the server signs with a throwaway testnet key (dev only, never mainnet). */
 export function serverDevSigning() {
   return config.moneyMode === "testnet" && config.testnetSigner === "server-dev";
 }

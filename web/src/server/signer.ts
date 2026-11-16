@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { config } from "./config";
+import { moneyLive } from "./config";
 import { ApiFailure } from "./errors";
 
 /**
@@ -36,11 +36,11 @@ export type SignRequest = {
 export type SignResult = { txRef: string; mock: boolean };
 
 export async function signAndSubmit(req: SignRequest): Promise<SignResult> {
-  if (config.moneyMode === "testnet") {
+  if (moneyLive()) {
     // Refuse rather than pretend. Wire the Privy Tier 2 signer before enabling.
     throw new ApiFailure(
       "SIGNING_UNAVAILABLE",
-      "This action isn't live on testnet yet. Only USDC sends are real so far.",
+      "This action isn't live yet. Only USDC sends are real so far.",
       503,
     );
   }

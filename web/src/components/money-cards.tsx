@@ -206,8 +206,8 @@ export function SendCard({
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         <Field label="To" value={intent.to.name} />
         {intent.fee === 0 ? (
-          // Testnet: the network fee is paid in test XLM.
-          <Field label="Network fee" value="Paid in test XLM" />
+          // Real network: the fee is paid in XLM.
+          <Field label="Network fee" value="Paid in XLM" />
         ) : (
           <Field label="Fee (example)" value={`${usdcNumber(intent.fee)} USDC`} />
         )}
@@ -246,7 +246,7 @@ export function SendCard({
       ) : (
         <StateFooter
           state={state}
-          doneText={intent.fee === 0 ? `Sent to ${intent.to.name} on Stellar testnet` : `Sent to ${intent.to.name} (mock)`}
+          doneText={intent.fee === 0 ? `Sent to ${intent.to.name} on Stellar` : `Sent to ${intent.to.name} (mock)`}
           cancelText="Cancelled. Nothing was sent."
         />
       )}
