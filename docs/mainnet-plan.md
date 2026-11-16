@@ -144,7 +144,7 @@ Built (code, not yet tried with real money): Stellar DEX only, as a strict-send 
 
 ## Stage 2 results (17 November)
 
-Production runs `MONEY_MODE=mainnet` with `MONEY_KILL=1`. The first mainnet build was refused at boot because `TESTNET_CONTACTS` and `AGENT_KEY_SECRET` were still set for Production. Both were removed, and the next build passed.
+Production runs `MONEY_MODE=mainnet`. `MONEY_KILL=1` is meant to be on, but no screen reports it; confirm in Vercel. The first mainnet build was refused at boot because `TESTNET_CONTACTS` and `AGENT_KEY_SECRET` were still set for Production. Both were removed, and the next build passed.
 
 - **Mainnet mode, caps, balances.** Pass. `/api/overview` reports mainnet, ₦18,750 per payment, ₦50,000 a day, and $12 per payment, $50 a day. The wallet status reads Circle's mainnet USDC issuer. Olayinka's wallet doesn't exist on mainnet yet (Horizon 404), so ₦0 and $0 are right. Setup waits for Stage 3, since sponsoring spends treasury XLM.
 - **Destination checks.** Pass. The real `checkDestination` ran against live mainnet accounts:
@@ -155,7 +155,7 @@ Production runs `MONEY_MODE=mainnet` with `MONEY_KILL=1`. The first mainnet buil
   - a USDC holder is accepted for USDC.
 
   In the app the balance check runs first, so a Production preview from an empty wallet stops at "wallet isn't set up" before it reaches this check.
-- **M6 screens.** Blocked. LINK's Cloudflare answers 403 to every call from Vercel's servers, from `/info` up, while the same calls work from a laptop. The cash-out page shows "The naira partner can't be reached right now. Nothing was sent." Two wrong pieces of copy were fixed: the wallet page called mainnet "testnet", and "Recent" said "preview" when the partner was unreachable.
+- **M6 screens.** Blocked. LINK's Cloudflare answers 403 to every call from Vercel's servers (region iad1), from `/info` up. From a laptop the same `/info` calls answer 200 with curl, Node's own `fetch`, and the User-Agents `node`, `undici` and none. So the cause is where the request comes from, not how it's made. The cash-out page shows "The naira partner can't be reached right now. Nothing was sent." Two wrong pieces of copy were fixed: the wallet page called mainnet "testnet", and "Recent" said "preview" when the partner was unreachable.
 - **Cash-out amounts check.** Not run. It needs LINK reachable from Production and ₦10,000 NGNC to start a real cash-out, so it moves to Stage 3 step 1, after the top-up.
 
 **New gate for Stage 3.** LINK has to let Wura's server through (Otowo asks, with the endpoint and the 403). Vercel Hobby has no fixed outgoing IP. If LINK can only allow an IP, the partner calls need to go through a proxy with a fixed address.
