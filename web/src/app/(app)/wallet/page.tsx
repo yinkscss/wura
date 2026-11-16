@@ -50,9 +50,11 @@ export default function WalletPage() {
       <PageHeader
         title={hello}
         sub={
-          data?.me.moneyMode !== "mock"
-            ? "Your Stellar testnet wallet. Limits are example amounts."
-            : "Example balances and limits, for a single wallet."
+          data?.me.moneyMode === "mainnet"
+            ? "Your Wura wallet on Stellar. Limits stay low during the beta."
+            : data?.me.moneyMode === "testnet"
+              ? "Your Stellar testnet wallet. Limits are example amounts."
+              : "Example balances and limits, for a single wallet."
         }
         actions={
           <>
