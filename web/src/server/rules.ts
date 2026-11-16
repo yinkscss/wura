@@ -176,7 +176,7 @@ export async function swapReply(
   amountIn: number,
 ): Promise<AgentReply> {
   try {
-    precheckSwap(s, from, amountIn);
+    await precheckSwap(s, from, amountIn);
     const quote = await getQuote(s, { from, to, amountIn });
     const best = quote.venues[0];
     const count = quote.venues.length;
@@ -186,7 +186,7 @@ export async function swapReply(
       ? ` ${quote.unquoted.map((u) => u.name).join(" and ")} couldn't be quoted, so I left ${quote.unquoted.length === 1 ? "it" : "them"} out.`
       : "";
     return {
-      text: `${compared} ${best.name} is the best rate right now.${skipped}${marketNote(quote)}`,
+      text: `${compared} ${quote.note ?? `${best.name} is the best rate right now.`}${skipped}${marketNote(quote)}`,
       card: { type: "quote", quote },
     };
   } catch (err) {

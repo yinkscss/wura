@@ -16,13 +16,15 @@ import type {
 import { money, naira, usdc } from "@/lib/format";
 import { chatApprovalsAvailable, chatApprovalStatus, sendWithAgentKey } from "./agent-key";
 import { config, serverDevSigning, moneyLive, onMainnet } from "./config";
+import { minReceived, swapPolicy } from "./swap-rules";
+import { refuseSwapOffMainnet, startLiveSwap } from "./swaps";
 import { ApiFailure } from "./errors";
 import { capPercent, scaleCap } from "./ops";
 import { compareVenues, EXAMPLE_FEE_BPS, marketRate, quoteSource } from "./routing";
 import type { Session } from "./session";
 import { signAndSubmit } from "./signer";
 import { assetFor, getAccountStatus, isValidAccount } from "./stellar";
-import { assetBalance, checkDestination, refuseInTestnet, startTestnetSend } from "./testnet";
+import { assetBalance, checkDestination, startTestnetSend } from "./testnet";
 import { newId, wallet, type WalletState } from "./store";
 import { assertInvited } from "./treasury";
 
@@ -128,12 +130,20 @@ export function getPaymentLinks(s: Session): PaymentLink[] {
 
 // ---------- Swap ----------
 
-/** Refuse a swap up front when it can't fit the caps or the balance. */
-export function precheckSwap(s: Session, from: Currency, amountIn: number) {
-  refuseInTestnet("Swaps");
+/** Refuse a swap up front when it can't fit the caps or the balance (the real balance on a live network). */
+export async function precheckSwap(s: Session, from: Currency, amountIn: number) {
+  refuseSwapOffMainnet();
   const w = wallet(s.userId);
   checkLimits(w, from, amountIn);
-  checkBalance(w, from, amountIn);
+  if (moneyLive()) {
+    assertInvited(s.email);
+    const bal = await assetBalance(s, from);
+    if (amountIn > bal) {
+      throw new ApiFailure("INSUFFICIENT_BALANCE", `You don't have enough ${from === "NGN" ? "naira" : "USDC"}. Your balance is ${money(bal, from)}.`, 403);
+    }
+  } else {
+    checkBalance(w, from, amountIn);
+  }
 }
 
 export async function getQuote(
@@ -154,7 +164,22 @@ export async function getQuote(
       503,
     );
   }
-  const best = quoted[0];
+  // On mainnet a swap runs on the Stellar DEX only, so that's the price you approve. The others are shown to compare.
+  const executable = onMainnet();
+  let best = quoted[0];
+  let note: string | undefined;
+  if (executable) {
+    const sdex = quoted.find((v) => v.venue === "sdex");
+    if (!sdex) {
+      throw new ApiFailure("NO_VENUES", "The Stellar DEX has no price for this right now, and it's where swaps run, so there's nothing to approve. Try again in a minute.", 503);
+    }
+    for (const v of quoted) v.best = v === sdex;
+    quoted.sort((a, b) => Number(b.best) - Number(a.best) || b.amountOut - a.amountOut);
+    best = sdex;
+    if (quoted.length > 1 && quoted[1].amountOut > sdex.amountOut) {
+      note = `Swaps run on the Stellar DEX for now. ${quoted[1].name} shows a better price, but it can't be used yet.`;
+    }
+  }
   const live = quoteSource === "live";
   // Compare live prices with the market rate, so a thin pool can't quietly cost the user.
   const ref = live ? await marketRate() : null;
@@ -181,13 +206,15 @@ export async function getQuote(
     source: quoteSource,
     market: ref ?? undefined,
     vsMarketPct,
+    ...(executable ? { executesOn: "sdex" as const, minOut: minReceived(best.amountOut, swapPolicy().slippageBps) } : {}),
+    ...(note ? { note } : {}),
   };
   w.quotes.set(quote.id, quote);
   return quote;
 }
 
 export async function approveSwap(s: Session, input: { quoteId: string; approve: unknown }) {
-  refuseInTestnet("Swaps");
+  refuseSwapOffMainnet();
   const w = wallet(s.userId);
   const quote = w.quotes.get(String(input.quoteId));
   if (!quote) throw new ApiFailure("QUOTE_NOT_FOUND", "That quote doesn't exist. Ask for a new one.", 404);
@@ -201,6 +228,8 @@ export async function approveSwap(s: Session, input: { quoteId: string; approve:
   if (input.approve !== true) {
     throw new ApiFailure("NOT_APPROVED", "Nothing was sent. A swap only goes ahead when you approve it.", 403);
   }
+  // Mainnet: the user's wallet signs a real Stellar DEX swap next.
+  if (moneyLive()) return startLiveSwap(s, quote);
   checkLimits(w, quote.from, quote.amountIn);
   checkBalance(w, quote.from, quote.amountIn);
 
@@ -415,7 +444,7 @@ export async function openApproval(
   if (quote) {
     if (quote.status === "expired" || (quote.status === "pending" && Date.now() > quote.expiresAt)) {
       if (tooOld(quote)) throw new ApiFailure("QUOTE_EXPIRED", APPROVAL_TOO_OLD, 410);
-      precheckSwap(s, quote.from, quote.amountIn);
+      await precheckSwap(s, quote.from, quote.amountIn);
       const fresh = await getQuote(s, { from: quote.from, to: quote.to, amountIn: quote.amountIn });
       w.quotes.delete(fresh.id);
       Object.assign(quote, { ...fresh, id: quote.id, createdAt: quote.createdAt });

@@ -1,4 +1,6 @@
 import "server-only";
+import { moneyLive } from "./config";
+import { ApiFailure } from "./errors";
 import { approveSwap, cancelQuote, cancelSend, createSend } from "./money";
 import type { Session } from "./session";
 
@@ -16,9 +18,12 @@ export function approveSendFromChat(s: Session, intentId: string) {
   return createSend(s, { intentId, approve: true, via: "chat" });
 }
 
-/** Swaps aren't live on testnet yet; this refuses there with a clear message. */
-export function approveSwapFromChat(s: Session, quoteId: string) {
-  return approveSwap(s, { quoteId, approve: true });
+/** Mock mode only. A real swap needs the user's own wallet to sign on the web (chat signing is M11). */
+export async function approveSwapFromChat(s: Session, quoteId: string) {
+  if (moneyLive()) throw new ApiFailure("SIGNING_UNAVAILABLE", "Swaps need your wallet to sign, so approve this one in Wura on the web.", 409);
+  const r = await approveSwap(s, { quoteId, approve: true });
+  if (!("mock" in r)) throw new ApiFailure("SIGNING_UNAVAILABLE", "Swaps need your wallet to sign, so approve this one in Wura on the web.", 409);
+  return r;
 }
 
 export { cancelQuote, cancelSend };

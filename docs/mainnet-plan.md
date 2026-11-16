@@ -112,6 +112,8 @@ Done when: both complete in staging with the live partner.
 
 Done when: a real $1 swap and a small naira swap both go through, the log shows what was received, and a stale quote is refused.
 
+Built (code, not yet tried with real money): Stellar DEX only, as a strict-send path payment from the wallet to itself. On mainnet the quote's price is the DEX's (Aquarius and Soroswap are shown to compare, with a note when one is better). The minimum received is the approved amount less `SWAP_SLIPPAGE_BPS` (0.5%); approving re-reads the route and refuses if it's now under that, and the transaction itself fails on chain below it. Above ₦5,000 or $5, a price more than `SWAP_MAX_GAP_PCT` (3%) under the market rate is refused, and so is a missing market rate; naira to dollars points to the USDC cash in. At today's gap (about 30%) that refuses most naira to dollars swaps above ₦5,000, on purpose. The log shows what Horizon says arrived. Chat apps send the user to the web to sign (chat signing is M11). Soroswap's key is only for quotes.
+
 **M11. Chat approvals on mainnet (D2).** Meet the five conditions above before Stage 3 involves any chat approval.
 
 ## Testing and rollout

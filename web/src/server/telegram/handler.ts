@@ -2,7 +2,7 @@ import "server-only";
 import { money, usdc } from "@/lib/format";
 import { handleMessage, type ChatTurn } from "../agent";
 import { approveSendFromChat, approveSwapFromChat, cancelQuote, cancelSend } from "../channel";
-import { config } from "../config";
+import { config, moneyLive } from "../config";
 import { ApiFailure } from "../errors";
 import type { Session } from "../session";
 import { approveSiteAction, cancelSiteAction, respondToConnect } from "../site-connect";
@@ -206,6 +206,8 @@ async function runButton(s: Session, action: string, id: string): Promise<Button
         return { outcome: `Sent ${usdc(r.intent.amount)} to ${r.intent.to.name}.${r.mock ? " (Mock mode: nothing was broadcast.)" : ""}${link}` };
       }
       if (isSwap) {
+        // A real swap is signed by the wallet in the browser, which Telegram can't do.
+        if (moneyLive()) return { outcome: `Swaps need your wallet to sign, so approve this one in Wura on the web${config.telegram.appUrl ? `: ${config.telegram.appUrl}/approve/${id}` : "."}` };
         const r = await approveSwapFromChat(s, id);
         return { outcome: `Swapped ${money(r.quote.amountIn, r.quote.from)} → ${money(r.quote.amountOut, r.quote.to)}.${r.mock ? " (Mock mode: nothing was broadcast.)" : ""}` };
       }

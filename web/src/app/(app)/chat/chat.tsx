@@ -113,13 +113,18 @@ export function Chat() {
   async function approveQuote(msgId: string, quote: Quote) {
     patch(msgId, { state: "busy" });
     try {
-      const res = await api<{ quote: Quote; activity: { txRef?: string }; mock: boolean }>("/api/swap/approve", {
-        quoteId: quote.id,
-        approve: true,
-      });
+      type Swapped = { quote: Quote; activity: { txRef?: string; amount?: string; explorerUrl?: string }; mock: boolean };
+      // On mainnet this returns needs_signature: the wallet signs the swap, then we submit.
+      const res = await completeSigning<Swapped>(
+        await api<Swapped | NeedsSignature>("/api/swap/approve", { quoteId: quote.id, approve: true }),
+      );
       patch(msgId, { state: "done" });
-      const got = quote.to === "USDC" ? usdc(quote.amountOut) : naira(quote.amountOut);
-      say(`Done. ${got} is in your wallet. Reference ${res.activity.txRef}${res.mock ? " (mock — nothing was broadcast)" : ""}.`);
+      if (res.mock) {
+        const got = quote.to === "USDC" ? usdc(quote.amountOut) : naira(quote.amountOut);
+        say(`Done. ${got} is in your wallet. Reference ${res.activity.txRef} (mock — nothing was broadcast).`);
+      } else {
+        say(`Swapped. ${res.activity.amount} arrived in your wallet.`, undefined, res.activity.explorerUrl);
+      }
       void refresh();
     } catch (e) {
       const err = e as ClientApiError;
