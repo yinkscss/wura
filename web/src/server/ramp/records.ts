@@ -198,6 +198,46 @@ export async function releaseLog(id: string): Promise<void> {
   if (d) await d`update ramp_transfers set logged_at = null where id = ${id}`;
 }
 
+type TransferKey = { provider: string; service: RampCurrency; anchorTxId: string };
+
+/**
+ * Claims a cash-out for the one Stellar payment that pays it, before that
+ * payment is submitted. True when this transaction now owns the cash-out (or
+ * already did, so the same signed transaction can be retried); false when
+ * another transaction owns it, the cash-out has ended, or there is no record.
+ *
+ * It is one statement on its own connection, so it is saved the moment it
+ * returns and survives a timeout in the middle of the submit. That is what
+ * stops a second, different payment for the same cash-out. Release it only
+ * when the network has rejected the payment for certain.
+ */
+export async function claimCashOutPayment(key: TransferKey, txHash: string): Promise<boolean> {
+  const d = await db();
+  if (!d || !/^[0-9a-f]{64}$/.test(txHash)) return false;
+  return (
+    (await d`
+      update ramp_transfers set stellar_tx_id = ${txHash}, updated_at = now()
+      where provider = ${key.provider} and service = ${key.service} and anchor_tx_id = ${key.anchorTxId}
+        and kind = 'cashout' and state in ('waiting_for_you', 'processing')
+        and (stellar_tx_id is null or stellar_tx_id = ${txHash})
+      returning id`).length === 1
+  );
+}
+
+/**
+ * Gives the claim back after the network rejected the payment for certain, so
+ * the cash-out can be paid with a new one. Does nothing unless this exact
+ * transaction holds the claim and the cash-out is still open.
+ */
+export async function releaseCashOutPayment(key: TransferKey, txHash: string): Promise<void> {
+  const d = await db();
+  if (!d) return;
+  await d`
+    update ramp_transfers set stellar_tx_id = null, updated_at = now()
+    where provider = ${key.provider} and service = ${key.service} and anchor_tx_id = ${key.anchorTxId}
+      and kind = 'cashout' and state in ('waiting_for_you', 'processing') and stellar_tx_id = ${txHash}`;
+}
+
 /** Marks an open transfer as stuck. True the first time only. */
 export async function flag(id: string): Promise<boolean> {
   const d = await db();
