@@ -62,7 +62,15 @@ export default function CashOutPage() {
         <Card className="h-fit p-6 shadow-soft sm:p-7">
           <h2 className="text-[20px] font-bold tracking-[-0.03em]">Recent</h2>
           <p className="mb-4 mt-1 text-[13.5px] text-muted">Your top-ups and cash-outs with the partner.</p>
-          {info?.live ? <Recent onResume={setLive} /> : <p className="text-[13.5px] text-muted">In the preview nothing reaches a partner, so there’s nothing to list.</p>}
+          {info?.live ? (
+            <Recent onResume={setLive} />
+          ) : infoErr ? (
+            <p className="text-[13.5px] text-muted">Shows here once the partner can be reached.</p>
+          ) : !info ? (
+            <SkeletonBlock className="h-24" />
+          ) : (
+            <p className="text-[13.5px] text-muted">In the preview nothing reaches a partner, so there’s nothing to list.</p>
+          )}
         </Card>
       </div>
     </div>
