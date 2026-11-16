@@ -101,9 +101,9 @@ export function log(w: WalletState, a: Omit<Activity, "id" | "at">) {
 
 export async function getBalances(s: Session): Promise<Balances> {
   if (moneyLive()) {
-    // Real USDC from Horizon. Naira isn't on testnet: the on-ramp isn't connected.
+    // Real balances from Horizon: USDC, and NGNC (naira) on mainnet. Naira doesn't exist on testnet.
     const st = await getAccountStatus(s.address).catch(() => null);
-    return { NGN: 0, USDC: st?.usdc ?? 0 };
+    return { NGN: st?.ngn ?? 0, USDC: st?.usdc ?? 0 };
   }
   return { ...wallet(s.userId).balances };
 }
