@@ -48,7 +48,7 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string, opts: 
     { name: "wura", version: "0.3.0" },
     {
       instructions:
-        "Wura is a money assistant for naira and USDC on Stellar. Use these tools to check balances, limits, rates, favourites and activity, and to prepare sends, swaps and payment links. Wura never moves money from a tool call: a prepared send or swap comes with an approval link, and nothing happens until the user opens it and confirms in Wura. Always give the user the link.",
+        "Wura is a money assistant for naira and USDC on Stellar. Use these tools to check balances, limits, rates, favourites and activity, and to prepare sends, swaps and payment links, and to connect to Stellar sites. Wura never moves money from a tool call: a prepared send or swap comes with an approval link, and nothing happens until the user opens it and confirms in Wura. Always give the user the link.",
     },
   );
   const can = (scope: Scope) => scopes.includes(scope);
@@ -248,6 +248,66 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string, opts: 
             `Details: ${out.content}`,
             `To swap, the user opens this link, signs in to Wura and approves: ${approveUrl(q.id)}`,
             "If the link is opened after a minute, Wura gets a fresh quote before they approve.",
+          ].join("\n"),
+        );
+      },
+    );
+    // Real Stellar sites (testnet). Permission and every signature are approved on the Wura page behind the link.
+    server.registerTool(
+      "connect_site",
+      {
+        title: "Connect to a Stellar site",
+        description:
+          "Read a Stellar (Soroban) site the user names and list the contracts and functions it uses. If the site isn't allowed yet it returns an approval link instead: give it to the user and wait for them to say they allowed it, then call connect_site again. Signs nothing.",
+        inputSchema: {
+          url: z.string().min(1).describe("The site's link or domain, as the user wrote it."),
+          want: z.string().max(80).describe("What the user wants to do there, e.g. 'buy 2 posters'. Empty if not said.").default(""),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      },
+      async ({ url, want }) => {
+        const busy = await tooMany();
+        if (busy) return busy;
+        const out = await runTool(s, "connect_site", { url, want });
+        if (out.isError) return refusal(out);
+        if (out.card?.type === "site-permission") {
+          return reply(
+            `Wura needs the user's OK to connect to ${out.card.request.host}. Give them this link to allow or decline it: ${approveUrl(out.card.request.id)} . Then call connect_site again once they say they've allowed it.`,
+          );
+        }
+        if (out.card?.type === "site-action") {
+          return reply(`Prepared, not signed: ${out.card.action.summary}. Give the user this link to review and approve it in Wura: ${approveUrl(out.card.action.id)}`);
+        }
+        return reply(out.content);
+      },
+    );
+    if (moneyLive()) server.registerTool(
+      "prepare_site_call",
+      {
+        title: "Prepare a call on a Stellar site",
+        description:
+          "After connect_site returned contracts: pick ONE function of ONE returned contract and prepare that call. Wura simulates it and returns an approval link showing exactly what it would do. It signs nothing: the user must open the link and approve. Give the user the link. Use only contract addresses and function names returned by connect_site.",
+        inputSchema: {
+          url: z.string().min(1).describe("The same site link as in connect_site."),
+          contract: z.string().min(1).describe("A contract address exactly as returned by connect_site."),
+          function: z.string().min(1).describe("A function name exactly as returned for that contract."),
+          args: z.string().describe('JSON object of the function\'s arguments keyed by parameter name, e.g. {"buyer":"G...","qty":1}. For the buyer or payer use your_address from connect_site.').default("{}"),
+          want: z.string().max(80).default(""),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      },
+      async (input) => {
+        const busy = await tooMany();
+        if (busy) return busy;
+        const out = await runTool(s, "prepare_site_call", input);
+        if (out.isError) return refusal(out);
+        const action = out.card?.type === "site-action" ? out.card.action : null;
+        if (!action) return reply(out.content);
+        return reply(
+          [
+            `Prepared, not signed: ${action.summary}.`,
+            `Network fee about ${action.feeXlm ?? "?"} XLM. Preview valid for ${Math.round((action.expiresAt - Date.now()) / 1000)} seconds.`,
+            `Give the user this link to review and approve it in Wura: ${approveUrl(action.id)}`,
           ].join("\n"),
         );
       },

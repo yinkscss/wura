@@ -1,6 +1,6 @@
 import "server-only";
-import type { Currency, NeedsSignature, PaymentMemo, SendIntent, WalletStatus } from "@/lib/types";
-import { money } from "@/lib/format";
+import type { Currency, NeedsSignature, PaymentMemo, SendIntent, SiteAction, WalletStatus } from "@/lib/types";
+import { money, usdc } from "@/lib/format";
 import { config, serverDevSigning, moneyLive } from "./config";
 import { devKeypairFor } from "./dev-keys";
 import { ApiFailure } from "./errors";
@@ -22,6 +22,7 @@ import {
 } from "./stellar";
 import { TransactionBuilder, type Transaction } from "@stellar/stellar-sdk";
 import { alert } from "./alerts";
+import { submitSoroban } from "./site-soroban";
 import { assertInvited, prepareSponsoredSetup, sponsorshipConfigured } from "./treasury";
 import { newId, wallet, type PendingTx, type WalletState } from "./store";
 
@@ -222,10 +223,17 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
     p.signedXdr = signed.toXDR();
   }
 
+  let action: SiteAction | undefined;
+  if (p.kind === "site") {
+    action = w.siteActions.get(p.intentId ?? "");
+    if (!action || action.status !== "pending") throw new ApiFailure("ALREADY_USED", "That site payment was already signed or cancelled.", 409);
+    if (p.status === "pending") checkLimits(w, "USDC", action.price);
+  }
+
   p.status = "submitted";
   let hash: string;
   try {
-    hash = await submit(signed);
+    hash = p.kind === "site" ? await submitSoroban(signed) : await submit(signed);
   } catch (err) {
     if (err instanceof SubmitUnconfirmed) {
       p.status = "unconfirmed";
@@ -239,8 +247,26 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
 
   if (p.kind === "trustline" || p.kind === "setup") return { status: "ready" as const, kind: p.kind, hash, wallet: await walletStatus(s) };
   if (p.kind === "agent-key-on" || p.kind === "agent-key-off") return { status: "ready" as const, kind: p.kind, hash };
+  if (action) {
+    const activity = finishSiteAction(w, action, hash);
+    return { status: "done" as const, kind: p.kind, hash, action, activity, mock: false };
+  }
   const activity = finishSend(w, intent!, hash);
   return { status: "done" as const, kind: p.kind, hash, intent: intent!, activity, mock: false };
+}
+
+/** A real site call went through. Counts the USDC it took against today's cap and logs it. */
+export function finishSiteAction(w: WalletState, action: SiteAction, hash: string) {
+  action.status = "signed";
+  w.spentToday.USDC += action.price;
+  return log(w, {
+    kind: "site",
+    detail: `${action.siteName} · ${action.call.fn}`,
+    amount: usdc(action.price),
+    status: "done",
+    txRef: hash,
+    explorerUrl: config.explorerTx(hash),
+  });
 }
 
 export function refuseInTestnet(what: string) {
