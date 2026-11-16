@@ -352,3 +352,25 @@ export async function watchedLinks(now = Date.now()): Promise<Array<{ userId: st
     limit 500`;
   return rows.map((r) => ({ userId: r.user_id as string, link: r.link as PaymentLink }));
 }
+
+/**
+ * Submits that Horizon never confirmed and that have sat for a while. A pending
+ * transaction's expiresAt is its creation plus the signing window, so
+ * "expired more than `afterMs` ago and still unconfirmed" means stuck.
+ * Hashes only: no user ids leave this function.
+ */
+export async function stuckSubmits(afterMs: number, now = Date.now()): Promise<string[]> {
+  const cutoff = now - afterMs;
+  if (!dbEnabled()) {
+    const out: string[] = [];
+    for (const w of g.__agentStore?.values() ?? []) for (const p of w.pendingTx.values()) if (p.status === "unconfirmed" && p.expiresAt < cutoff) out.push(p.hash);
+    return out;
+  }
+  await ensureSchema();
+  const rows = await sql()`
+    select p.item->1->>'hash' as hash
+    from wallets w, jsonb_array_elements(w.state->'pendingTx') as p(item)
+    where p.item->1->>'status' = 'unconfirmed' and (p.item->1->>'expiresAt')::bigint < ${cutoff}
+    limit 100`;
+  return rows.map((r) => String(r.hash));
+}

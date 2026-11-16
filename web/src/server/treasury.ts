@@ -2,6 +2,7 @@ import "server-only";
 import { Keypair, StrKey, type Asset } from "@stellar/stellar-sdk";
 import type { Currency } from "@/lib/types";
 import { config } from "./config";
+import { alert } from "./alerts";
 import { ApiFailure } from "./errors";
 import type { Session } from "./session";
 import { assertSetupTx, buildSetupTx, sponsorCostXlm } from "./sponsorship";
@@ -15,8 +16,8 @@ import { assertMoneyOn, assetFor, getSponsorInfo, loadSourceAccount, type Accoun
  *   sponsored setup transaction and nothing else: assertSetupTx refuses any
  *   other shape before the key is used.
  * - Sponsoring is gated: BETA_ALLOWLIST (emails), SPONSOR_MAX_ACCOUNTS, and a
- *   floor (TREASURY_MIN_XLM) below which it stops and logs an error. The log
- *   line is the low-balance alert until M8 adds delivery.
+ *   floor (TREASURY_MIN_XLM) below which it stops and logs an error. The low
+ *   balance goes out as an alert (alerts.ts) and is also checked by /api/cron/ops.
  * - Money stays non-custodial: the treasury never holds user funds. The user's
  *   own wallet signs the trustlines.
  */
@@ -54,6 +55,13 @@ export function sponsorAllowed(email: string): boolean {
     .filter(Boolean);
   if (list.length === 0) return config.stellarNetwork !== "mainnet";
   return list.includes(email.trim().toLowerCase());
+}
+
+/** On mainnet only people on BETA_ALLOWLIST may move money or make links (D5). Testnet and mock are open. */
+export function assertInvited(email: string) {
+  if (config.stellarNetwork === "mainnet" && !sponsorAllowed(email)) {
+    throw new ApiFailure("NOT_INVITED", "Wura is invite-only for now. Your email isn't on the list yet.", 403);
+  }
 }
 
 export type TreasuryStatus = {
@@ -118,7 +126,7 @@ export async function prepareSponsoredSetup(s: Session, st: AccountStatus): Prom
     console.error(`[treasury] account cap reached (${status.maxAccounts}). Refusing ${s.address}.`);
     throw new ApiFailure("NOT_INVITED", "Wura is full for now. We'll let you know when there's room.", 403);
   }
-  if (status.low) console.error(`[treasury] LOW: ${status.available.toFixed(2)} XLM free, floor ${status.minXlm}. Top up ${status.address}.`);
+  if (status.low) void alert("treasury_low", `${status.available.toFixed(2)} XLM free, floor ${status.minXlm}. Top up ${status.address}.`);
 
   const treasury = await loadSourceAccount(kp.publicKey());
   const tx = buildSetupTx({

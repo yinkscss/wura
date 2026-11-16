@@ -5,6 +5,7 @@ import { config, moneyKilled, moneyLive } from "./config";
 import { ApiFailure } from "./errors";
 import { LINK } from "./ramp/link";
 import type { SeenPayment } from "./paylinks";
+import { alert } from "./alerts";
 
 /**
  * Stellar testnet access. Server-side only: the UI never talks to Horizon.
@@ -412,6 +413,7 @@ function isNotFound(err: unknown) {
 
 function networkError(err: unknown) {
   console.error("horizon error", err);
+  void alert("horizon_error", `couldn't reach ${config.networkLabel}: ${err instanceof Error ? err.message.slice(0, 120) : "unknown"}`, "horizon");
   return new ApiFailure("BAD_REQUEST", `Couldn't reach ${config.networkLabel}. Nothing was sent. Try again in a moment.`, 502);
 }
 

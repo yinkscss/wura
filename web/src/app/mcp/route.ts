@@ -1,7 +1,9 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { alert } from "@/server/alerts";
 import { buildMcpServer } from "@/server/mcp";
 import { baseUrl, isClaudeClient, verifyAccessToken } from "@/server/oauth";
 import { CORS } from "@/server/oauth-http";
+import { withinRate } from "@/server/ratelimit";
 import { sessionForUser } from "@/server/users";
 
 // Wura's remote MCP endpoint (Streamable HTTP, stateless). OAuth bearer required.
@@ -32,6 +34,17 @@ export async function POST(req: Request) {
   if (!grant) return unauthorized(req, true);
   const session = await sessionForUser(grant.userId);
   if (!session) return unauthorized(req, true);
+
+  // Per connection (one user on one app) and per user across all their apps.
+  const okConn = await withinRate(`mcp:${grant.userId}:${grant.clientId}`, 60, 60);
+  const okUser = okConn && (await withinRate(`mcp-user:${grant.userId}`, 120, 60));
+  if (!okUser) {
+    void alert("rate_limited", `an MCP connection went over its limit (${okConn ? "per user" : "per app"}).`, grant.userId);
+    return new Response(JSON.stringify({ error: "rate_limited", message: "Too many requests. Wait a minute and try again." }), {
+      status: 429,
+      headers: { "content-type": "application/json", "retry-after": "60", ...CORS },
+    });
+  }
 
   const server = buildMcpServer(session, grant.scopes, baseUrl(req), { inChatApprove: await isClaudeClient(grant.clientId) });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });

@@ -21,7 +21,8 @@ import {
   type BuiltTx,
 } from "./stellar";
 import { TransactionBuilder, type Transaction } from "@stellar/stellar-sdk";
-import { prepareSponsoredSetup, sponsorshipConfigured } from "./treasury";
+import { alert } from "./alerts";
+import { assertInvited, prepareSponsoredSetup, sponsorshipConfigured } from "./treasury";
 import { newId, wallet, type PendingTx, type WalletState } from "./store";
 
 /**
@@ -144,6 +145,7 @@ export const usdcBalance = (s: Session) => assetBalance(s, "USDC");
 /** Everything that can change between the preview and the signature, checked again. */
 export async function recheckSend(s: Session, w: WalletState, intent: SendIntent) {
   if (intent.status !== "pending") throw new ApiFailure("ALREADY_USED", "That payment was already sent or cancelled.", 409);
+  assertInvited(s.email); // someone taken off the list after previewing must not still be able to send
   checkLimits(w, intent.asset, intent.amount);
   const bal = await assetBalance(s, intent.asset);
   if (intent.total > bal) {
@@ -227,9 +229,11 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
   } catch (err) {
     if (err instanceof SubmitUnconfirmed) {
       p.status = "unconfirmed";
+      void alert("submit_unconfirmed", `a ${p.kind} (tx ${p.hash.slice(0, 12)}…) was submitted but Horizon never said if it landed. Retrying the same signed XDR is safe.`, p.hash);
       throw new ApiFailure("BAD_REQUEST", "We couldn't confirm yet whether that went through. Check again in a moment. It won't be sent twice.", 502);
     }
     p.status = "failed";
+    void alert("submit_failed", `a ${p.kind} (tx ${p.hash.slice(0, 12)}…) was rejected: ${err instanceof Error ? err.message.slice(0, 160) : "unknown"}`, p.hash);
     throw err;
   }
 

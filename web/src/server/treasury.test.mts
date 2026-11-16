@@ -8,7 +8,8 @@ process.env.PRIVY_APP_SECRET = "privy-secret";
 process.env.DATABASE_URL = "postgres://nobody@localhost:1/none"; // never connected: these tests don't touch the database
 process.env.SESSION_SECRET = "y".repeat(40);
 for (const k of ["VERCEL_ENV", "TESTNET_SIGNER", "AGENT_KEY_SECRET", "STELLAR_USDC_ISSUER", "STELLAR_HORIZON_URL", "TESTNET_CONTACTS", "MONEY_KILL", "TREASURY_SECRET", "BETA_ALLOWLIST"]) delete process.env[k];
-const { sponsorAllowed, sponsorshipConfigured, requiredAssets, startingXlm } = await import("./treasury");
+const { sponsorAllowed, sponsorshipConfigured, requiredAssets, startingXlm, assertInvited } = await import("./treasury");
+const { EXAMPLE_LIMITS } = await import("./money");
 const { Keypair } = await import("@stellar/stellar-sdk");
 
 test("on mainnet an empty allowlist lets nobody in; the list is by email, case-insensitive", () => {
@@ -17,6 +18,23 @@ test("on mainnet an empty allowlist lets nobody in; the list is by email, case-i
   assert.equal(sponsorAllowed("a@example.com"), true);
   assert.equal(sponsorAllowed("B@EXAMPLE.COM"), true);
   assert.equal(sponsorAllowed("c@example.com"), false);
+});
+
+test("on mainnet only allowlisted emails may preview a send or make a link", () => {
+  const was = process.env.BETA_ALLOWLIST;
+  process.env.BETA_ALLOWLIST = "a@example.com";
+  assert.doesNotThrow(() => assertInvited("A@example.com"));
+  assert.throws(() => assertInvited("c@example.com"), /invite-only/);
+  process.env.BETA_ALLOWLIST = "";
+  assert.throws(() => assertInvited("a@example.com"), /invite-only/);
+  process.env.BETA_ALLOWLIST = was;
+});
+
+test("mainnet caps start at 25% of the example caps (D5)", () => {
+  assert.equal(EXAMPLE_LIMITS.perPayment.NGN, 18_750_00);
+  assert.equal(EXAMPLE_LIMITS.perPayment.USDC, 12_00);
+  assert.equal(EXAMPLE_LIMITS.daily.NGN, 50_000_00);
+  assert.equal(EXAMPLE_LIMITS.daily.USDC, 50_00);
 });
 
 test("sponsorship needs a valid TREASURY_SECRET", () => {
