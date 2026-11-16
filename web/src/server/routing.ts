@@ -51,6 +51,9 @@ function parseAsset(v?: string): Classic | null {
 
 const asset = (c: Currency) => (c === "NGN" ? NGN : USDC);
 
+/** The asset a currency is quoted in (code and issuer). Swaps check it matches the asset they execute in. */
+export const quotedAsset = (c: Currency) => ({ code: asset(c).code, issuer: asset(c).issuer });
+
 /** Our minor units (2 decimals) ↔ Stellar's 7 decimals. */
 const toStroops = (minor: number) => BigInt(minor) * BigInt(100_000);
 const fromStroops = (stroops: bigint) => Number(stroops / BigInt(100_000));

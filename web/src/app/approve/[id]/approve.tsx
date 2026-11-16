@@ -115,10 +115,16 @@ export function Approve({ params }: { params: Promise<{ id: string }> }) {
     setState("busy");
     setErr(null);
     try {
-      const res = await api<Done>("/api/swap/approve", { quoteId: quote.id, approve: true });
+      type Swapped = { activity: { amount?: string; explorerUrl?: string }; mock: boolean };
+      // On mainnet the wallet signs the swap, then we submit.
+      const res = await completeSigning<Swapped>(await api<Swapped | NeedsSignature>("/api/swap/approve", { quoteId: quote.id, approve: true }));
       setState("done");
       const got = quote.to === "USDC" ? usdc(quote.amountOut) : naira(quote.amountOut);
-      setResult({ text: `Done. ${got} is in your wallet${res.mock ? " (mock — nothing was broadcast)" : ""}.` });
+      setResult(
+        res.mock
+          ? { text: `Done. ${got} is in your wallet (mock — nothing was broadcast).` }
+          : { text: `Swapped. You got ${res.activity.amount}.`, href: res.activity.explorerUrl },
+      );
       void refresh();
     } catch (e) {
       const ce = e as ClientApiError;

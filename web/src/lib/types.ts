@@ -50,6 +50,14 @@ export type Quote = {
   market?: { rate: number; source: string; updatedAt: string };
   /** How much worse (negative) or better the best quote is than the market rate, in percent. */
   vsMarketPct?: number;
+  /** Mainnet: the venue the swap runs on (the Stellar DEX for now). `amountOut` is that venue's price. */
+  executesOn?: VenueId;
+  /** Mainnet: the least the swap may deliver (minor units of `to`); below it the transaction fails. */
+  minOut?: number;
+  /** After a real swap: what actually arrived (minor units of `to`). */
+  received?: number;
+  /** A line to show with the quote, e.g. which venue it runs on. */
+  note?: string;
 };
 
 /** A saved recipient ("favourite"). */
@@ -208,7 +216,8 @@ export type ApiErrorCode =
   | "CONTRACT_NOT_FOUND"
   | "CONTRACT_UNVERIFIED"
   | "SIMULATION_FAILED"
-  | "CHAT_APPROVAL_OFF";
+  | "CHAT_APPROVAL_OFF"
+  | "PRICE_TOO_FAR";
 
 export type ApiError = { error: { code: ApiErrorCode; message: string } };
 

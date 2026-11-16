@@ -179,7 +179,11 @@ export async function fundWithFriendbot(address: string) {
 
 export type BuiltTx = { xdr: string; hash: string };
 
-type Op = ReturnType<typeof Operation.payment> | ReturnType<typeof Operation.changeTrust> | ReturnType<typeof Operation.setOptions>;
+type Op =
+  | ReturnType<typeof Operation.payment>
+  | ReturnType<typeof Operation.changeTrust>
+  | ReturnType<typeof Operation.setOptions>
+  | ReturnType<typeof Operation.pathPaymentStrictSend>;
 
 /** Builds the unsigned transaction from an already-loaded account. Pure: no network, so it can be tested. */
 export function buildTx(account: Account, op: Op, memo?: Memo): BuiltTx {
@@ -213,6 +217,68 @@ export async function buildPayment(input: { from: string; to: string; currency: 
 /** Adds a trustline for a currency's asset. */
 export function buildTrustline(address: string, currency: Currency) {
   return build(address, Operation.changeTrust({ asset: requireAsset(currency) }));
+}
+
+/**
+ * A swap (M10): a strict-send path payment from the user to themselves on the
+ * Stellar DEX. It sells exactly `sendCents` and fails on chain unless at least
+ * `destMinCents` arrives, so a price that moves between quote and submit
+ * refuses instead of filling badly. Pure: no network.
+ */
+export function swapOp(input: { address: string; sendAsset: Asset; sendCents: number; destAsset: Asset; destMinCents: number; path: Asset[] }) {
+  return Operation.pathPaymentStrictSend({
+    sendAsset: input.sendAsset,
+    sendAmount: centsToAmount(input.sendCents),
+    destination: input.address,
+    destAsset: input.destAsset,
+    destMin: centsToAmount(input.destMinCents),
+    path: input.path,
+  });
+}
+
+/** Builds the swap transaction for the user's own wallet to sign. Goes through build(), so the kill switch applies. */
+export function buildSwap(input: { address: string; from: Currency; to: Currency; sendCents: number; destMinCents: number; path: Asset[] }) {
+  const op = swapOp({ address: input.address, sendAsset: requireAsset(input.from), sendCents: input.sendCents, destAsset: requireAsset(input.to), destMinCents: input.destMinCents, path: input.path });
+  return build(input.address, op, "Wura swap");
+}
+
+type PathAsset = { asset_type: string; asset_code?: string; asset_issuer?: string };
+const toAsset = (a: PathAsset) => (a.asset_type === "native" ? Asset.native() : new Asset(String(a.asset_code), String(a.asset_issuer)));
+
+/**
+ * The best Stellar DEX route right now for selling exactly `sendCents` of one
+ * currency for another, read from this network's Horizon. Null when there's none.
+ */
+export async function bestSwapPath(from: Currency, to: Currency, sendCents: number): Promise<{ destCents: number; path: Asset[] } | null> {
+  let recs: Array<{ destination_amount: string; path: PathAsset[] }>;
+  try {
+    const page = await server().strictSendPaths(requireAsset(from), centsToAmount(sendCents), [requireAsset(to)]).call();
+    recs = page.records as unknown as typeof recs;
+  } catch (err) {
+    if (isNotFound(err)) return null;
+    throw networkError(err);
+  }
+  if (!recs.length) return null;
+  const best = recs.reduce((x, y) => (toStroopsBig(y.destination_amount) > toStroopsBig(x.destination_amount) ? y : x));
+  return { destCents: amountToCents(best.destination_amount), path: best.path.map(toAsset) };
+}
+
+const toStroopsBig = (s: string) => {
+  const [w, f = ""] = s.split(".");
+  return BigInt(w) * BigInt(10_000_000) + BigInt((f + "0000000").slice(0, 7));
+};
+
+/** What a landed swap actually sold and received (minor units), read from Horizon. Null if it can't be read. */
+export async function swapAmounts(hash: string): Promise<{ soldCents: number; receivedCents: number } | null> {
+  try {
+    const page = await server().operations().forTransaction(hash).call();
+    const op = (page.records as unknown as Array<Record<string, unknown>>).find((r) => r.type === "path_payment_strict_send");
+    if (!op) return null;
+    return { soldCents: amountToCents(String(op.source_amount)), receivedCents: amountToCents(String(op.amount)) };
+  } catch (err) {
+    console.error("couldn't read swap amounts", hash, err);
+    return null;
+  }
 }
 
 export const buildUsdcPayment = (from: string, to: string, cents: number) =>
@@ -423,12 +489,15 @@ function submitError(err: unknown) {
   const op = codes?.operations?.[0];
   const txc = codes?.transaction;
   const msg: Record<string, string> = {
-    op_underfunded: `Your wallet doesn't have enough USDC for that on ${config.stellarNetwork}.`,
+    op_underfunded: `Your wallet doesn't have enough for that on ${config.stellarNetwork}.`,
     op_no_trust: "The other account can't receive USDC yet: it has no USDC trustline.",
     op_no_destination: `That account doesn't exist on ${config.stellarNetwork} yet.`,
     op_line_full: "The other account can't hold that much USDC.",
-    op_src_no_trust: "Your wallet isn't set up for USDC yet. Set it up first.",
+    op_src_no_trust: "Your wallet isn't set up for that currency yet. Set it up first.",
     op_low_reserve: "Your wallet needs a little more XLM to do that.",
+    op_under_dest_min: "The price moved before the swap landed, so nothing was swapped. Ask for a fresh quote.",
+    op_too_few_offers: "There wasn't enough on the market to fill that swap, so nothing was swapped. Try a smaller amount.",
+    op_over_source_max: "The price moved before the swap landed, so nothing was swapped. Ask for a fresh quote.",
     tx_bad_seq: "Another transaction went through first. Ask again and I'll rebuild it.",
     tx_too_late: "That took too long to sign, so it expired. Ask again.",
     tx_bad_auth: "The signature didn't match your wallet, so nothing was sent.",

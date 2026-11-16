@@ -26,6 +26,8 @@ Set each one with only the **Production** box ticked. Preview gets its own diffe
 | `DATABASE_URL` | Production database. Preview must not point at it. |
 | `APP_URL` | The public https address, e.g. `https://wurapay.xyz`. |
 | `BETA_ALLOWLIST`, `MONEY_KILL` | Production values. |
+| `SOROSWAP_API_KEY` | Quotes only (swaps run on the Stellar DEX). Without it Soroswap shows as not connected. |
+| `SWAP_SLIPPAGE_BPS`, `SWAP_MAX_GAP_PCT`, `SWAP_GAP_CHECK_ABOVE_NGN`, `SWAP_GAP_CHECK_ABOVE_USDC` | Real-swap guards (M10). Defaults 50, 3, 5000, 5. See `.env.example`. |
 
 The app checks at boot that no two of the secrets above are the same value. It cannot compare Production with Preview (it only sees its own environment), so that one is a manual check: open Vercel, Settings, Environment Variables, and confirm `SESSION_SECRET` shows two different entries.
 

@@ -145,9 +145,21 @@ export function QuoteCard({
       {quote.market && quote.vsMarketPct !== undefined && (
         <MarketCheck pct={quote.vsMarketPct} marketRate={quote.market.rate} source={quote.market.source} />
       )}
+      {quote.minOut !== undefined && (
+        <div className="rounded-xl bg-mist px-4 py-3 text-[13px] text-muted">
+          You’ll get at least <b className="nums text-blue">{money(quote.minOut, quote.to)}</b>. If the price moves below that before it lands, nothing is swapped.
+          {quote.note && <span className="mt-1 block">{quote.note}</span>}
+        </div>
+      )}
       {live && !expired && (
         <div className="flex items-center justify-between text-[12.5px] text-soft">
-          <span>{quote.source === "live" ? "Live Stellar mainnet prices · swap is simulated" : "Example rates · mock mode"}</span>
+          <span>
+            {quote.executesOn
+              ? "Live Stellar mainnet prices · your wallet signs"
+              : quote.source === "live"
+                ? "Live Stellar mainnet prices · swap is simulated"
+                : "Example rates · mock mode"}
+          </span>
           <span className="nums">Quote valid {left}s</span>
         </div>
       )}
@@ -166,7 +178,7 @@ export function QuoteCard({
           </Button>
         </div>
       ) : (
-        <StateFooter state={state} doneText="Approved and swapped (mock)" cancelText="Cancelled. Nothing was sent." />
+        <StateFooter state={state} doneText={quote.executesOn ? "Approved and swapped" : "Approved and swapped (mock)"} cancelText="Cancelled. Nothing was sent." />
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 import "server-only";
-import type { Currency, NeedsSignature, PaymentMemo, SendIntent, SiteAction, WalletStatus } from "@/lib/types";
+import type { Currency, NeedsSignature, PaymentMemo, Quote, SendIntent, SiteAction, WalletStatus } from "@/lib/types";
 import { money, usdc } from "@/lib/format";
-import { config, serverDevSigning, moneyLive } from "./config";
+import { config, serverDevSigning } from "./config";
 import { devKeypairFor } from "./dev-keys";
 import { ApiFailure } from "./errors";
 import { checkLimits, log } from "./money";
@@ -23,6 +23,7 @@ import {
 import { TransactionBuilder, type Transaction } from "@stellar/stellar-sdk";
 import { alert } from "./alerts";
 import { submitSoroban } from "./site-soroban";
+import { finishSwap, recheckSwap } from "./swaps";
 import { assertInvited, prepareSponsoredSetup, sponsorshipConfigured } from "./treasury";
 import { newId, wallet, type PendingTx, type WalletState } from "./store";
 
@@ -199,9 +200,14 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
 
   let signed: Transaction;
   let intent: SendIntent | undefined;
+  let quote: Quote | undefined;
   if (p.kind === "send") {
     intent = w.sends.get(p.intentId ?? "");
     if (!intent) throw new ApiFailure("INTENT_NOT_FOUND", "That payment preview doesn't exist any more.", 404);
+  }
+  if (p.kind === "swap") {
+    quote = w.quotes.get(p.intentId ?? "");
+    if (!quote) throw new ApiFailure("QUOTE_NOT_FOUND", "That quote doesn't exist any more. Ask for a new one.", 404);
   }
 
   if (p.status === "unconfirmed" && p.signedXdr) {
@@ -219,6 +225,7 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
       throw new ApiFailure("NOT_APPROVED", "The signature didn't match your wallet, so nothing was sent.", 403);
     }
     if (intent) await recheckSend(s, w, intent);
+    if (quote) await recheckSwap(s, w, quote); // the price itself is held by the transaction's minimum
     signed = attachSignature(p.xdr, s.address, sig);
     p.signedXdr = signed.toXDR();
   }
@@ -247,6 +254,10 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
 
   if (p.kind === "trustline" || p.kind === "setup") return { status: "ready" as const, kind: p.kind, hash, wallet: await walletStatus(s) };
   if (p.kind === "agent-key-on" || p.kind === "agent-key-off") return { status: "ready" as const, kind: p.kind, hash };
+  if (quote) {
+    const activity = await finishSwap(w, quote, hash);
+    return { status: "done" as const, kind: p.kind, hash, quote, activity, mock: false };
+  }
   if (action) {
     const activity = finishSiteAction(w, action, hash);
     return { status: "done" as const, kind: p.kind, hash, action, activity, mock: false };
@@ -267,14 +278,4 @@ export function finishSiteAction(w: WalletState, action: SiteAction, hash: strin
     txRef: hash,
     explorerUrl: config.explorerTx(hash),
   });
-}
-
-export function refuseInTestnet(what: string) {
-  if (moneyLive()) {
-    throw new ApiFailure(
-      "SIGNING_UNAVAILABLE",
-      `On ${config.stellarNetwork}, only USDC sends are real so far. ${what} go live once real quotes are wired.`,
-      409,
-    );
-  }
 }

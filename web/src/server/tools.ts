@@ -122,15 +122,18 @@ function quoteFacts(q: Quote) {
     venues: q.venues.map((v) => ({ name: v.name, gives: fmt(v.amountOut, q.to) })),
     not_compared: q.unquoted.map((u) => ({ name: u.name, reason: u.reason })),
     market_check: marketNote(q).trim() || null,
+    ...(q.minOut !== undefined ? { minimum_received: fmt(q.minOut, q.to), runs_on: "Stellar DEX", note: q.note ?? null } : {}),
     prices: q.source === "live" ? "live Stellar mainnet prices" : "example prices (mock mode)",
     quote_valid_seconds: Math.round((q.expiresAt - Date.now()) / 1000),
   };
 }
 
 const SWAP_NOTE =
-  moneyLive()
-    ? `This app is on ${config.networkLabel}: swaps aren't live yet, so approving this quote will be refused.`
-    : "Mock mode: approving simulates the swap; nothing is broadcast.";
+  config.stellarNetwork === "mainnet" && moneyLive()
+    ? "Real swap: when the user approves on the card, their own wallet signs a Stellar DEX swap. If the price drops below the minimum before it lands, nothing is swapped."
+    : moneyLive()
+      ? `This app is on ${config.networkLabel}: swaps need naira, which only exists on mainnet, so approving this quote will be refused.`
+      : "Mock mode: approving simulates the swap; nothing is broadcast.";
 
 async function run(s: Session, name: string, input: Record<string, unknown>): Promise<ToolOutcome> {
   switch (name) {
@@ -142,7 +145,7 @@ async function run(s: Session, name: string, input: Record<string, unknown>): Pr
       const from = currency(input.from);
       const to: Currency = from === "NGN" ? "USDC" : "NGN";
       const amountIn = toMinor(input.amount, "amount");
-      precheckSwap(s, from, amountIn);
+      await precheckSwap(s, from, amountIn);
       const quote = await getQuote(s, { from, to, amountIn });
       return {
         content: JSON.stringify({ ...quoteFacts(quote), shown_to_user: "quote card with Approve and Cancel buttons", note: SWAP_NOTE }),
