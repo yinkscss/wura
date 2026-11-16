@@ -103,6 +103,8 @@ Done when: both complete in staging with the live partner.
 
 **M9. Docs and wording.** Terms and the "through a partner" wording on every screen that moves money.
 
+Built: a public `/terms` page (draft, marked as not reviewed by a lawyer, no claim that Wura or any partner is licensed, contact address left as a placeholder) and one shared component, `components/partner-note.tsx`, that carries the plain wording: "through a partner" on the naira top-up screen, the swap card and the send card, each linking to the terms. Sign-in links to the terms too. The cash-out screen doesn't exist yet; add `<PartnerNote kind="naira" />` to it with M6. Still needed before the beta (D6): a lawyer's review of `/terms`, the contact address, and LINK's written answer.
+
 **M10. Swaps on mainnet (D3).** Today a swap is quoted but refused (`refuseInTestnet("Swaps")`). Plan: turn the best quote from `routing.ts` into a transaction the user's own wallet signs, through the same approve, caps, sign, submit and log path as a send. Design points to settle when this is built:
 - Which venues execute first. Stellar DEX path payments are classic operations and the simplest. Aquarius and Soroswap need a contract call and more work, so they may come second. The quote already compares all three.
 - A minimum amount received on every swap, so a price that moves between quote and submit fails instead of filling badly.

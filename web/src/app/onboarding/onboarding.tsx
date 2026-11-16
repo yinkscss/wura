@@ -7,6 +7,7 @@ import { api, ClientApiError } from "@/lib/api";
 import { naira } from "@/lib/format";
 import { BackIcon, BankIcon, ChatIcon, CheckIcon, CopyIcon, IdIcon, WalletIcon } from "@/components/icons";
 import { copyText } from "@/components/money-cards";
+import { PartnerNote } from "@/components/partner-note";
 import { Starfield } from "@/components/starfield";
 import type { RampInfo } from "@/server/ramp/types";
 import { Button, ButtonLink, Card, Pill, Wordmark, buttonClass, cx } from "@/components/ui";
@@ -402,6 +403,7 @@ function NairaAmount({ ramp, onBack, onOrder }: { ramp: RampInfo | null; onBack:
       <Card className="mt-10 rounded-card-lg p-7 text-blue shadow-deep sm:p-9">
         <form onSubmit={submit} className="flex flex-col gap-5">
           <BackLink onClick={onBack} />
+          <PartnerNote kind="naira" />
           {ramp?.identityCheck !== "partner_page" && (
             <div className="flex items-center gap-2 text-[13px] font-semibold text-pink-deep">
               <CheckIcon size={15} /> Identity check passed

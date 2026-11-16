@@ -6,6 +6,7 @@ import type { PaymentLink, Quote, SendIntent, VenueQuote } from "@/lib/types";
 import { day, money, naira, rate, usdcNumber } from "@/lib/format";
 import { linkStateText } from "@/server/paylinks";
 import { CheckIcon, ClockIcon, CopyIcon, LinkIcon, ShareIcon } from "./icons";
+import { PartnerNote } from "./partner-note";
 import { Button, Eyebrow, Pill, cx } from "./ui";
 
 export function RateRows({
@@ -145,6 +146,7 @@ export function QuoteCard({
       {quote.market && quote.vsMarketPct !== undefined && (
         <MarketCheck pct={quote.vsMarketPct} marketRate={quote.market.rate} source={quote.market.source} />
       )}
+      {quote.executesOn && <PartnerNote kind="swap" />}
       {quote.minOut !== undefined && (
         <div className="rounded-xl bg-mist px-4 py-3 text-[13px] text-muted">
           You’ll get at least <b className="nums text-blue">{money(quote.minOut, quote.to)}</b>. If the price moves below that before it lands, nothing is swapped.
@@ -245,6 +247,7 @@ export function SendCard({
           <div className="mt-1 text-[12px] text-soft">Example limits. Real amounts aren’t set yet.</div>
         </div>
       </div>
+      {live && !expired && <PartnerNote kind="send" />}
       {live && expired ? (
         <div className="flex flex-col gap-2">
           <p className="text-[13px] text-muted">This preview expired. Prepare it again to send.</p>
