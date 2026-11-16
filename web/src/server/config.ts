@@ -32,6 +32,8 @@ export const config = {
   /** Which network addresses, links and passphrase point at. Mock mode uses testnet's. */
   stellarNetwork: NET.name,
   horizonUrl: NET.horizonUrl,
+  sorobanRpcUrl: NET.sorobanRpcUrl,
+  networkPassphrase: NET.passphrase,
   networkPassphrase: NET.passphrase,
   /** Empty on mainnet: there is no faucet. */
   friendbotUrl: NET.friendbotUrl,
