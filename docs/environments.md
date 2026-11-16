@@ -21,8 +21,8 @@ Set each one with only the **Production** box ticked. Preview gets its own diffe
 | `PRIVY_APP_SECRET`, `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_VERIFICATION_KEY` | From the production Privy app. The app id is baked in at build time, so Preview builds must carry the other app's id. |
 | `TREASURY_SECRET` | Mainnet treasury key. Not in Preview at all. |
 | `AGENT_KEY_SECRET` | Stays unset on mainnet until M11. |
-| `RAMP_TOKEN_KEY` | Encrypts the partner token (M6). Not in Preview. |
-| `CRON_SECRET` | Protects `/api/cron/links`. |
+| `RAMP_TOKEN_KEY` | Encrypts the stored partner sign-in. 32+ characters, different from every other secret. Not in Preview. Unset: the sign-in lives in the cookie only, so the reconcile job can't read older transfers. |
+| `CRON_SECRET` | Protects the scheduled routes (`/api/cron/links`, `/api/cron/ops`, `/api/funding/reconcile`). They answer 404 without it. Must match the header in cron-job.org (see "Scheduled jobs"). |
 | `DATABASE_URL` | Production database. Preview must not point at it. |
 | `APP_URL` | The public https address, e.g. `https://wurapay.xyz`. |
 | `BETA_ALLOWLIST`, `MONEY_KILL` | Production values. |
@@ -48,5 +48,20 @@ It will not start (every request returns 500, with the reasons in the log) if an
 1. Production branch is `main`. Preview deployments are for all other branches.
 2. In every secret above, confirm the **Production** box is the only one ticked.
 3. Preview has `MONEY_MODE` empty, `mock` or `testnet`. If it ever says `mainnet`, the preview will not start.
-4. Add a scheduler that calls `GET /api/cron/links` with `Authorization: Bearer $CRON_SECRET` (Hobby plans allow daily crons only; use an external scheduler for every minute).
+4. Scheduled jobs run on cron-job.org (see below), because Hobby plans allow daily Vercel crons only.
 5. Turn on Vercel's "Sensitive" flag for each secret so it can't be read back in the dashboard.
+6. After adding or changing any secret, redeploy Production. A running deployment keeps the old values.
+
+## Scheduled jobs (cron-job.org)
+
+Three jobs on cron-job.org (console.cron-job.org, Olayinka's account), set up on 16 November 2026. Each is a `GET` with the header `Authorization: Bearer <CRON_SECRET>`, a 30 second timeout, and an email after repeated failures and again on recovery.
+
+| Job | URL | Every | Email after |
+| --- | --- | --- | --- |
+| Wura: payment-link watcher | `https://wurapay.xyz/api/cron/links` | 1 minute | 3 failures in a row |
+| Wura: ops checks and alerts | `https://wurapay.xyz/api/cron/ops` | 5 minutes | 2 failures in a row |
+| Wura: naira partner reconcile | `https://wurapay.xyz/api/funding/reconcile` | 5 minutes | 2 failures in a row |
+
+- **All three answer 404:** `CRON_SECRET` is missing from Production, Production wasn't redeployed after it was set, or the header doesn't match it exactly (one space after `Bearer`, no trailing space).
+- **Changing `CRON_SECRET`:** set the new value in Vercel (Production only), redeploy, then update the header in all three jobs (Edit, Advanced tab). Runs in between answer 404.
+- Each job's history in the console shows the status code of every run. A healthy run is `200 OK` with JSON.

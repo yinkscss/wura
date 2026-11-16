@@ -33,7 +33,9 @@ Who to call at LINK: **TODO** (name, channel, hours). What to give them: the use
 
 - Every alert is a log line starting `[ALERT]` and, if `ALERT_WEBHOOK_URL` is set (https, Slack or Discord compatible), a message to that channel. The same alert repeats at most every 10 minutes.
 - Kinds: `submit_failed`, `submit_unconfirmed`, `horizon_error`, `stuck_transfer`, `treasury_low`, `link_watcher_failed`, `rate_limited`.
-- Schedule `GET /api/cron/ops` every 5 minutes with `Authorization: Bearer $CRON_SECRET`. It returns mode, whether the kill switch is on, the treasury (free XLM, floor, sponsored accounts) and the stuck count, and raises `treasury_low` and `stuck_transfer`.
+- Scheduled jobs run on cron-job.org; the list, and what to do when they answer 404, is in `docs/environments.md` under "Scheduled jobs". cron-job.org emails Olayinka when a job keeps failing.
+- `GET /api/funding/reconcile` (every 5 minutes) brings naira top-ups and cash-outs in step with the partner. Its answer has `stuck.cashoutsInProgress`: cash-outs the partner was already working on and that have been open over a day. Money may have left the wallet, so each one needs a person (section 3). It does not raise an alert yet.
+- `GET /api/cron/ops` (every 5 minutes) returns mode, whether the kill switch is on, the treasury (free XLM, floor, sponsored accounts) and the stuck count, and raises `treasury_low` and `stuck_transfer`.
 - **Treasury low:** send XLM to the address in the alert. The floor is `TREASURY_MIN_XLM` (default 20). Below it, new wallet setups are refused; existing users are not affected.
 
 ## 5. Limits and who is in
