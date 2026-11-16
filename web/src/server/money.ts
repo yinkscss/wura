@@ -17,12 +17,14 @@ import { money, naira, usdc } from "@/lib/format";
 import { chatApprovalsAvailable, chatApprovalStatus, sendWithAgentKey } from "./agent-key";
 import { config, serverDevSigning, moneyLive, onMainnet } from "./config";
 import { ApiFailure } from "./errors";
+import { capPercent, scaleCap } from "./ops";
 import { compareVenues, EXAMPLE_FEE_BPS, marketRate, quoteSource } from "./routing";
 import type { Session } from "./session";
 import { signAndSubmit } from "./signer";
 import { assetFor, getAccountStatus, isValidAccount } from "./stellar";
 import { assetBalance, checkDestination, refuseInTestnet, startTestnetSend } from "./testnet";
 import { newId, wallet, type WalletState } from "./store";
+import { assertInvited } from "./treasury";
 
 /**
  * The money API. Every write goes through here, and here only: the UI never
@@ -36,10 +38,11 @@ import { newId, wallet, type WalletState } from "./store";
  *   - the balance covers it.
  */
 
-// Example caps. The real amounts are still open (docs/open-questions.md).
+// Example caps (docs/open-questions.md), scaled down by CAP_PERCENT (25% on mainnet unless set; D5).
+const CAP_PCT = capPercent(process.env, config.stellarNetwork === "mainnet");
 export const EXAMPLE_LIMITS = {
-  daily: { NGN: 200_000_00, USDC: 200_00 } as Balances,
-  perPayment: { NGN: 75_000_00, USDC: 50_00 } as Balances,
+  daily: { NGN: scaleCap(200_000_00, CAP_PCT), USDC: scaleCap(200_00, CAP_PCT) } as Balances,
+  perPayment: { NGN: scaleCap(75_000_00, CAP_PCT), USDC: scaleCap(50_00, CAP_PCT) } as Balances,
 };
 
 /** Example flat fee on a USDC send, in cents. */
@@ -293,6 +296,7 @@ export function removeContact(s: Session, address: unknown) {
 
 /** Step 1: build a preview. Refuses up front if it can't be within limits. */
 export async function previewSend(s: Session, input: { to: string; amount: number; asset?: Currency; memo?: PaymentMemo }): Promise<SendIntent> {
+  assertInvited(s.email);
   const w = wallet(s.userId);
   const asset: Currency = input.asset ?? "USDC";
   // Naira (NGNC) moves only on a live network that has it (mainnet). Mock mode stays USDC.
@@ -509,6 +513,7 @@ function linkCode(amount: number, currency: Currency) {
 
 export async function createPaymentLink(s: Session, input: { amount: number; currency?: Currency }): Promise<PaymentLink> {
   const w = wallet(s.userId);
+  assertInvited(s.email);
   const amount = requirePositiveInt(input.amount, "amount");
   const currency: Currency = input.currency === "USDC" ? "USDC" : "NGN";
   if (moneyLive()) {

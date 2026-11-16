@@ -1,6 +1,7 @@
 import "server-only";
 import { money } from "@/lib/format";
 import type { PaymentLink } from "@/lib/types";
+import { alert } from "./alerts";
 import { config, moneyLive } from "./config";
 import { log } from "./money";
 import { applyPayments, type LinkAsset } from "./paylinks";
@@ -93,5 +94,6 @@ export async function refreshAllLinks(): Promise<{ checked: number; failed: numb
       failed++;
     }
   }
+  if (failed > 0) await alert("link_watcher_failed", `${failed} payment link${failed === 1 ? "" : "s"} couldn't be checked on Horizon this run.`, "links");
   return { checked: ok, failed };
 }

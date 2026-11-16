@@ -116,6 +116,13 @@ create table if not exists telegram_rate (
   count            integer not null default 0,
   primary key (telegram_user_id, window_start)
 );
+-- Request counters for rate limits (Claude and ChatGPT connections). Rows older than an hour are swept.
+create table if not exists rate_limits (
+  key          text not null,
+  window_start timestamptz not null,
+  count        integer not null default 0,
+  primary key (key, window_start)
+);
 create table if not exists telegram_updates (
   update_id bigint primary key,
   at        timestamptz not null default now()
