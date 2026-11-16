@@ -4,7 +4,9 @@ import { ApiFailure } from "../errors";
 import type { Session } from "../session";
 import { loadAnchor, type AnchorEndpoints, type AnchorPin } from "./sep1";
 import { ChallengeError, checkChallenge, exchangeChallenge, fetchChallenge, readAnchorToken, signChallenge } from "./sep10";
-import { getInfo, getTransfer, startInteractive, toMinor, type Sep24Info } from "./sep24";
+import { statusMessage } from "./messages";
+import { recordTransfer, saveStatus, type TransferKind } from "./records";
+import { getInfo, getTransfer, startInteractive, toMinor, type Sep24Info, type TransferStatus } from "./sep24";
 import type { PartnerSignIn, RampCurrency, RampProvider } from "./types";
 
 /**
@@ -135,7 +137,7 @@ async function mainnetHolding(account: string, receive: RampCurrency): Promise<n
   const notReady = () =>
     new ApiFailure(
       "SIGNING_UNAVAILABLE",
-      `Your wallet isn't set up to hold ${receive === "NGN" ? "naira" : "dollars"} with the naira partner yet. Nothing was sent.`,
+      `Your wallet needs a one-time setup before it can hold ${receive === "NGN" ? "naira" : "dollars"}. Finish setting up your wallet, then try again. Nothing was sent.`,
       409,
     );
   let res: Response;
@@ -153,6 +155,44 @@ async function mainnetHolding(account: string, receive: RampCurrency): Promise<n
   const line = body?.balances?.find((b) => b.asset_code === code && b.asset_issuer === issuer);
   if (!line) throw notReady();
   return toMinor(line.balance) ?? 0;
+}
+
+/**
+ * Stores a transfer the partner has just opened, before the user is sent to
+ * its page. If it can't be stored the user isn't sent: nothing has moved, and
+ * a transfer we have no record of couldn't be followed after a restart.
+ */
+async function remember(s: Session, service: RampCurrency, kind: TransferKind, anchorTxId: string, amount: number) {
+  try {
+    await recordTransfer({ userId: s.userId, address: s.address, provider: "link", service, kind, anchorTxId, amount });
+  } catch (err) {
+    console.error("[ramp:link] record", err instanceof Error ? err.message : "failed");
+    throw new ApiFailure("BAD_REQUEST", "We couldn't start that right now. Nothing was sent. Please try again.", 503);
+  }
+}
+
+/** Keeps the stored transfer in step with what the partner just said. A failure here never breaks the status read. */
+async function keep(service: RampCurrency, t: TransferStatus) {
+  try {
+    await saveStatus({ provider: "link", service, anchorTxId: t.id }, t);
+  } catch (err) {
+    console.error("[ramp:link] save status", err instanceof Error ? err.message : "failed");
+  }
+}
+
+/**
+ * For the reconcile job: what the partner says about one transfer now, read
+ * with a stored partner token. null when the token is no longer accepted for
+ * this wallet. Throws when the partner can't be reached or answers for a
+ * different kind of transfer.
+ */
+export async function readLinkTransfer(input: { service: RampCurrency; account: string; token: string; id: string; kind: TransferKind }): Promise<TransferStatus | null> {
+  const token = usable(input.token, input.account);
+  if (!token) return null;
+  const { anchor } = await linkAnchor(input.service);
+  const t = await getTransfer({ transferServer: anchor.transferServer, token, id: input.id });
+  if ((t.kind === "deposit") !== (input.kind === "topup")) throw new Error("the partner answered for a different kind of transfer");
+  return t;
 }
 
 export const linkRamp: RampProvider = {
@@ -211,6 +251,7 @@ export const linkRamp: RampProvider = {
         account: s.address,
         amount,
       });
+      await remember(s, receive, "topup", page.id, amount);
       return { id: page.id, amount, currency: receive, status: "open_partner_page", mock: false, url: page.url };
     } catch (err) {
       unreachable(err);
@@ -224,7 +265,8 @@ export const linkRamp: RampProvider = {
     try {
       const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
       if (t.kind !== "deposit") throw new Error("not a top-up");
-      return { id, state: t.state, currency: receive, received: t.amountOut, fee: t.fee, txRef: t.stellarTxId };
+      await keep(receive, t);
+      return { id, state: t.state, message: statusMessage("topup", t.anchorStatus), currency: receive, received: t.amountOut, fee: t.fee, txRef: t.stellarTxId };
     } catch (err) {
       unreachable(err);
     }
@@ -247,6 +289,7 @@ export const linkRamp: RampProvider = {
         account: s.address,
         amount,
       });
+      await remember(s, from, "cashout", page.id, amount);
       return { id: page.id, amount, currency: from, status: "open_partner_page", mock: false, url: page.url };
     } catch (err) {
       unreachable(err);
@@ -260,7 +303,8 @@ export const linkRamp: RampProvider = {
     try {
       const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
       if (t.kind !== "withdrawal") throw new Error("not a cash-out");
-      return { id, state: t.state, currency: from, send: t.amountIn, fee: t.fee, readyToPay: t.payTo !== null, txRef: t.stellarTxId };
+      await keep(from, t);
+      return { id, state: t.state, message: statusMessage("cashout", t.anchorStatus), currency: from, send: t.amountIn, fee: t.fee, readyToPay: t.payTo !== null, txRef: t.stellarTxId };
     } catch (err) {
       unreachable(err);
     }
