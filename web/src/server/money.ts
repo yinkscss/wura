@@ -6,6 +6,7 @@ import type {
   Currency,
   Limits,
   PaymentLink,
+  PaymentMemo,
   Contact,
   Quote,
   SendIntent,
@@ -14,13 +15,13 @@ import type {
 } from "@/lib/types";
 import { money, naira, usdc } from "@/lib/format";
 import { chatApprovalsAvailable, chatApprovalStatus, sendWithAgentKey } from "./agent-key";
-import { config, serverDevSigning, moneyLive } from "./config";
+import { config, serverDevSigning, moneyLive, onMainnet } from "./config";
 import { ApiFailure } from "./errors";
 import { compareVenues, EXAMPLE_FEE_BPS, marketRate, quoteSource } from "./routing";
 import type { Session } from "./session";
 import { signAndSubmit } from "./signer";
-import { getAccountStatus, isValidAccount } from "./stellar";
-import { checkDestination, refuseInTestnet, startTestnetSend, usdcBalance } from "./testnet";
+import { assetFor, getAccountStatus, isValidAccount } from "./stellar";
+import { assetBalance, checkDestination, refuseInTestnet, startTestnetSend } from "./testnet";
 import { newId, wallet, type WalletState } from "./store";
 
 /**
@@ -291,10 +292,12 @@ export function removeContact(s: Session, address: unknown) {
 }
 
 /** Step 1: build a preview. Refuses up front if it can't be within limits. */
-export async function previewSend(s: Session, input: { to: string; amount: number; asset?: Currency }): Promise<SendIntent> {
+export async function previewSend(s: Session, input: { to: string; amount: number; asset?: Currency; memo?: PaymentMemo }): Promise<SendIntent> {
   const w = wallet(s.userId);
   const asset: Currency = input.asset ?? "USDC";
-  if (asset !== "USDC") throw new ApiFailure("BAD_REQUEST", "Sends are in USDC for now.");
+  // Naira (NGNC) moves only on a live network that has it (mainnet). Mock mode stays USDC.
+  if (asset !== "USDC" && !moneyLive()) throw new ApiFailure("BAD_REQUEST", "Sends are in USDC for now.");
+  const memo = moneyLive() ? cleanMemo(input.memo) : undefined;
   const amount = requirePositiveInt(input.amount, "amount");
   const contact = findContact(w, String(input.to ?? ""));
   if (!contact) {
@@ -304,25 +307,38 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
       404,
     );
   }
-  const intent: SendIntent = { id: newId("snd"), createdAt: Date.now(), ...(await sendFigures(s, w, contact, asset, amount)) };
+  const intent: SendIntent = { id: newId("snd"), createdAt: Date.now(), ...(await sendFigures(s, w, contact, asset, amount, memo)) };
   w.sends.set(intent.id, intent);
   return intent;
 }
 
 /** Runs every check for a send and returns fresh numbers. Throws on any refusal. */
-async function sendFigures(s: Session, w: WalletState, contact: SendIntent["to"], asset: Currency, amount: number): Promise<Omit<SendIntent, "id">> {
+/** Checks a memo the sender typed. Text is at most 28 bytes; an id is a whole number that fits in 64 bits. */
+export function cleanMemo(m: PaymentMemo | undefined): PaymentMemo | undefined {
+  if (!m || String(m.value ?? "").trim() === "") return undefined;
+  const value = String(m.value).trim();
+  const bad = (msg: string) => new ApiFailure("BAD_REQUEST", msg, 400);
+  if (m.type === "id") {
+    if (!/^\d{1,20}$/.test(value) || BigInt(value) > BigInt("18446744073709551615")) throw bad("That memo number isn't valid.");
+    return { type: "id", value };
+  }
+  if (Buffer.byteLength(value, "utf8") > 28) throw bad("A memo can be 28 characters at most.");
+  return { type: "text", value };
+}
+
+async function sendFigures(s: Session, w: WalletState, contact: SendIntent["to"], asset: Currency, amount: number, memo?: PaymentMemo): Promise<Omit<SendIntent, "id">> {
   const testnet = moneyLive();
   // With real money the network fee is paid in XLM, not USDC.
   const fee = testnet ? 0 : EXAMPLE_SEND_FEE;
   checkLimits(w, asset, amount);
   let balanceBefore = w.balances[asset];
   if (testnet) {
-    balanceBefore = await usdcBalance(s);
-    if (amount > balanceBefore) {
-      throw new ApiFailure("INSUFFICIENT_BALANCE", `You don't have enough USDC. Your balance is ${usdc(balanceBefore)}.`, 403);
-    }
     if (contact.address === s.address) throw new ApiFailure("BAD_REQUEST", "That's your own wallet.");
-    await checkDestination(contact.address, contact.name);
+    balanceBefore = await assetBalance(s, asset);
+    if (amount > balanceBefore) {
+      throw new ApiFailure("INSUFFICIENT_BALANCE", `You don't have enough ${asset === "NGN" ? "naira" : "USDC"}. Your balance is ${money(balanceBefore, asset)}.`, 403);
+    }
+    await checkDestination(contact.address, contact.name, asset, memo);
   } else {
     checkBalance(w, asset, amount + fee);
   }
@@ -330,6 +346,7 @@ async function sendFigures(s: Session, w: WalletState, contact: SendIntent["to"]
   return {
     to: { name: contact.name, address: contact.address, saved: contact.saved },
     asset,
+    ...(memo ? { memo } : {}),
     amount,
     fee,
     total: amount + fee,
@@ -386,7 +403,7 @@ export async function openApproval(
       // A card in a chat app still shows the old numbers: it can't approve the rebuilt ones.
       delete (w.cardCodes ??= {})[intent.id];
       const contact = findContact(w, intent.to.address)!;
-      Object.assign(intent, await sendFigures(s, w, contact, intent.asset, intent.amount));
+      Object.assign(intent, await sendFigures(s, w, contact, intent.asset, intent.amount, intent.memo));
     }
     return { kind: "send", intent };
   }
@@ -480,8 +497,9 @@ export function cancelSend(s: Session, intentId: string) {
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
+/** 8 random characters (40 bits, so a code can't be guessed) and the amount, e.g. "K7P2QX4M-15K". Also the link's payment memo (13 characters, under the 28 allowed). */
 function linkCode(amount: number, currency: Currency) {
-  const b = randomBytes(4);
+  const b = randomBytes(8);
   const head = Array.from(b, (x) => CODE_ALPHABET[x % CODE_ALPHABET.length]).join("");
   const whole = Math.round(amount / 100);
   const tail =
@@ -489,17 +507,31 @@ function linkCode(amount: number, currency: Currency) {
   return `${head}-${tail}`;
 }
 
-export function createPaymentLink(s: Session, input: { amount: number; currency?: Currency }): PaymentLink {
+export async function createPaymentLink(s: Session, input: { amount: number; currency?: Currency }): Promise<PaymentLink> {
   const w = wallet(s.userId);
   const amount = requirePositiveInt(input.amount, "amount");
   const currency: Currency = input.currency === "USDC" ? "USDC" : "NGN";
+  if (moneyLive()) {
+    // The money goes straight to the creator's wallet, so it has to be able to receive this asset.
+    if (!assetFor(currency)) {
+      throw new ApiFailure("BAD_REQUEST", `${currency === "NGN" ? "Naira (NGNC)" : currency} links aren't available on ${config.networkLabel}.`, 409);
+    }
+    const acct = await getAccountStatus(s.address);
+    const ready = acct.exists && (currency === "USDC" ? acct.hasTrustline : acct.hasNgncTrustline);
+    if (!ready) {
+      throw new ApiFailure("BAD_REQUEST", `Your wallet can't receive ${currency === "NGN" ? "naira (NGNC)" : currency} yet. Finish wallet setup first, then make the link.`, 409);
+    }
+  }
+  const base = config.appUrl || (onMainnet() ? "" : "http://localhost:3000");
+  if (!base) throw new ApiFailure("BAD_REQUEST", "Payment links need APP_URL to be set, so there's no address to give the payer.", 503);
   const code = linkCode(amount, currency);
   const now = Date.now();
   const link: PaymentLink = {
     id: newId("lnk"),
     code,
-    // Reserved example host: this is not a working payment page.
-    url: `https://example.com/p/${code}`,
+    url: `${base}/pay/${code}`,
+    address: s.address,
+    memo: code,
     amount,
     currency,
     status: "open",

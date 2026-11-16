@@ -34,12 +34,15 @@ import type { Contact } from "@/lib/types";
 
 export type PendingTx = {
   id: string;
-  kind: "send" | "trustline" | "agent-key-on" | "agent-key-off" | "site";
+  kind: "send" | "trustline" | "setup" | "agent-key-on" | "agent-key-off" | "site";
   xdr: string;
   hash: string;
   intentId?: string;
   expiresAt: number;
-  status: "pending" | "submitted" | "failed";
+  /** The fully signed transaction, kept once submitted so an unconfirmed submit can be retried safely. */
+  signedXdr?: string;
+  /** "unconfirmed": submitted but Horizon never said whether it landed. Retrying the same signed XDR can't pay twice. */
+  status: "pending" | "submitted" | "unconfirmed" | "failed";
 };
 
 export type WalletState = {
@@ -127,7 +130,9 @@ function seed(): WalletState {
       {
         id: newId("lnk"),
         code: "8F2K-15K",
-        url: "https://example.com/p/8F2K-15K",
+        url: "/pay/8F2K-15K",
+        address: exampleAddress("You"),
+        memo: "8F2K-15K",
         amount: 15_000_00,
         currency: "NGN",
         status: "open",
@@ -307,4 +312,43 @@ async function insertActivity(tx: TransactionSql, userId: string, a: Activity) {
     insert into activity (id, user_id, at, kind, detail, amount, status, tx_ref, explorer_url)
     values (${a.id}, ${userId}, ${new Date(a.at)}, ${a.kind}, ${a.detail}, ${a.amount}, ${a.status}, ${a.txRef ?? null}, ${a.explorerUrl ?? null})
     on conflict (id) do nothing`;
+}
+
+/**
+ * Finds a payment link by its public code, whoever owns it. Used by the public
+ * /pay page and the watcher. Reads without locking (the page never writes).
+ * A scan of the wallets table is fine at beta scale; add an index table if it grows.
+ */
+export async function findLink(code: string): Promise<{ userId: string; link: PaymentLink } | null> {
+  if (!dbEnabled()) {
+    for (const [userId, w] of g.__agentStore ?? []) {
+      const link = w.links.find((l) => l.code === code);
+      if (link) return { userId, link: { ...link } };
+    }
+    return null;
+  }
+  await ensureSchema();
+  const rows = await sql()`
+    select w.user_id, l.link
+    from wallets w, jsonb_array_elements(w.state->'links') as l(link)
+    where l.link->>'code' = ${code}
+    limit 1`;
+  return rows[0] ? { userId: rows[0].user_id as string, link: rows[0].link as PaymentLink } : null;
+}
+
+/** Links worth checking on Horizon: not yet expired, or expired within the last 3 days (so late payments show). */
+export async function watchedLinks(now = Date.now()): Promise<Array<{ userId: string; link: PaymentLink }>> {
+  const since = now - 3 * DAY;
+  if (!dbEnabled()) {
+    const out: Array<{ userId: string; link: PaymentLink }> = [];
+    for (const [userId, w] of g.__agentStore ?? []) for (const link of w.links) if (link.expiresAt > since) out.push({ userId, link: { ...link } });
+    return out;
+  }
+  await ensureSchema();
+  const rows = await sql()`
+    select w.user_id, l.link
+    from wallets w, jsonb_array_elements(w.state->'links') as l(link)
+    where (l.link->>'expiresAt')::bigint > ${since}
+    limit 500`;
+  return rows.map((r) => ({ userId: r.user_id as string, link: r.link as PaymentLink }));
 }

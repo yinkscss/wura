@@ -2,7 +2,7 @@ import "server-only";
 import { Account, Asset, BASE_FEE, Contract, StrKey, TransactionBuilder, contract, rpc, xdr, type Transaction } from "@stellar/stellar-sdk";
 import { config } from "./config";
 import { ApiFailure } from "./errors";
-import { assertMoneyOn } from "./stellar";
+import { SubmitUnconfirmed, assertMoneyOn } from "./stellar";
 import { analyzeAuth, refusalFor, spendFor, type Analysis, type Spend } from "./soroban-preview";
 
 /**
@@ -187,13 +187,16 @@ export async function submitSoroban(tx: Transaction): Promise<string> {
     console.error("sendTransaction failed", err);
     throw new ApiFailure("BAD_REQUEST", "Couldn't reach the network. Nothing was sent.", 502);
   }
+  // DUPLICATE: the same signed transaction is already in. Wait for its result instead of failing.
   if (sent.status === "ERROR" || sent.status === "TRY_AGAIN_LATER") {
     console.error("send rejected", sent.status, sent.errorResult?.toXDR("base64"));
     throw new ApiFailure("BAD_REQUEST", "The network rejected the transaction. Nothing was sent.", 422);
   }
   const done = await s.pollTransaction(sent.hash, { attempts: 12, sleepStrategy: () => 1000 });
+  // Not found yet: it may still land. The caller keeps the signed transaction and retries it, so it can't pay twice.
+  if (done.status === rpc.Api.GetTransactionStatus.NOT_FOUND) throw new SubmitUnconfirmed(sent.hash);
   if (done.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
-    throw new ApiFailure("BAD_REQUEST", done.status === "NOT_FOUND" ? "The network is slow to confirm. Check your activity in a minute before trying again." : "The transaction failed on the network. Nothing was taken.", 422);
+    throw new ApiFailure("BAD_REQUEST", "The transaction failed on the network. Nothing was taken.", 422);
   }
   return sent.hash;
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 process.env.MONEY_MODE = "mainnet";
+process.env.APP_URL = "https://wura.example";
 process.env.SESSION_SECRET = "y".repeat(40);
 for (const k of ["VERCEL_ENV", "TESTNET_SIGNER", "AGENT_KEY_SECRET", "STELLAR_USDC_ISSUER", "STELLAR_HORIZON_URL", "TESTNET_CONTACTS", "MONEY_KILL"]) delete process.env[k];
 

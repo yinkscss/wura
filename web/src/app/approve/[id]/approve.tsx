@@ -8,7 +8,7 @@ import { useOverview } from "@/components/overview";
 import { Button, ButtonLink, Card, Wordmark } from "@/components/ui";
 import { PageHeader, SkeletonBlock } from "@/components/wallet-parts";
 import { api, ClientApiError } from "@/lib/api";
-import { naira, usdc } from "@/lib/format";
+import { money, naira, usdc } from "@/lib/format";
 import { useCompleteSigning } from "@/lib/signing";
 import type { NeedsSignature, Quote, SendIntent, SiteAction, SiteConnectRequest } from "@/lib/types";
 
@@ -69,8 +69,8 @@ export function Approve({ params }: { params: Promise<{ id: string }> }) {
       setState("done");
       setResult(
         res.mock
-          ? { text: `Sent ${usdc(intent.amount)} to ${intent.to.name} (mock — nothing was broadcast).` }
-          : { text: `Sent ${usdc(intent.amount)} to ${intent.to.name} on Stellar.`, href: res.activity.explorerUrl },
+          ? { text: `Sent ${money(intent.amount, intent.asset)} to ${intent.to.name} (mock — nothing was broadcast).` }
+          : { text: `Sent ${money(intent.amount, intent.asset)} to ${intent.to.name} on Stellar.`, href: res.activity.explorerUrl },
       );
       void refresh();
     } catch (e) {

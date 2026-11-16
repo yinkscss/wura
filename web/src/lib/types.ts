@@ -55,6 +55,9 @@ export type Quote = {
 /** A saved recipient ("favourite"). */
 export type Contact = { name: string; address: string };
 
+/** A memo the sender attached (text up to 28 bytes, or a numeric id). Exchanges often require one. */
+export type PaymentMemo = { type: "text" | "id"; value: string };
+
 export type SendIntent = {
   id: string;
   /** When it was first prepared; an approval link stops rebuilding it after a day. */
@@ -62,6 +65,8 @@ export type SendIntent = {
   /** `saved` is false when the user typed a raw address that isn't in their favourites. */
   to: { name: string; address: string; saved?: boolean };
   asset: Currency;
+  /** Optional memo for the payment. Required when the recipient asks for one (SEP-29). */
+  memo?: PaymentMemo;
   amount: number;
   fee: number;
   total: number;
@@ -73,15 +78,40 @@ export type SendIntent = {
   status: "pending" | "sent" | "cancelled" | "expired";
 };
 
+/** One payment seen for a link. Only "counted" ones add to what's paid. */
+export type LinkPayment = {
+  /** Horizon operation id; seeing the same one twice changes nothing. */
+  id: string;
+  hash: string;
+  /** Cents or kobo, rounded down. */
+  amount: number;
+  /** Exact amount in stroops, as a string. */
+  stroops: string;
+  assetCode: string;
+  assetIssuer: string;
+  at: number;
+  kind: "counted" | "late" | "extra" | "wrong_asset";
+};
+
 export type PaymentLink = {
   id: string;
   code: string;
   url: string;
   amount: number;
   currency: Currency;
-  status: "open" | "paid" | "expired";
+  /** "partial": something arrived but not the full amount yet. */
+  status: "open" | "partial" | "paid" | "expired";
   createdAt: number;
   expiresAt: number;
+  /** Where the money goes: the creator's own wallet. Links made before M5 don't have these two. */
+  address: string;
+  /** Unique text memo a payer must include; it's how Wura recognises the payment. */
+  memo: string;
+  payments?: LinkPayment[];
+  /** Cents or kobo that counted toward the link. */
+  receivedMinor?: number;
+  paidAt?: number;
+  paidTx?: string;
 };
 
 export type Balances = Record<Currency, number>;
@@ -124,7 +154,7 @@ export type Me = {
   kycStatus: KycStatus;
 };
 
-/** Testnet wallet readiness (MONEY_MODE=testnet). */
+/** Wallet readiness on a live network: activated, with the trustlines it needs. */
 export type WalletStatus = {
   address: string;
   network: "testnet" | "mainnet";
@@ -132,6 +162,13 @@ export type WalletStatus = {
   xlm: string;
   usdc: number | null;
   hasTrustline: boolean;
+  /** Naira (NGNC) balance in kobo. Null off mainnet or without a trustline. */
+  ngn: number | null;
+  hasNgncTrustline: boolean;
+  /** True when this network has a naira asset and the wallet must hold it. */
+  needsNgnc: boolean;
+  /** True when Wura's reserve sets the wallet up (no XLM needed from the user). */
+  sponsored: boolean;
   ready: boolean;
   usdcIssuer: string;
   usingCircleUsdc: boolean;
@@ -165,6 +202,7 @@ export type ApiErrorCode =
   | "TRIAL_LIMIT"
   | "BAD_REQUEST"
   | "SIGNING_UNAVAILABLE" | "MONEY_PAUSED"
+  | "NOT_INVITED"
   | "SITE_NOT_ALLOWED"
   | "SITE_UNSUPPORTED"
   | "CONTRACT_NOT_FOUND"

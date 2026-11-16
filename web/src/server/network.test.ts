@@ -11,7 +11,7 @@ import {
 } from "./network";
 
 const SECRET = "x".repeat(40);
-const mainnet = (extra: Record<string, string> = {}) => ({ MONEY_MODE: "mainnet", SESSION_SECRET: SECRET, ...extra });
+const mainnet = (extra: Record<string, string> = {}) => ({ MONEY_MODE: "mainnet", SESSION_SECRET: SECRET, APP_URL: "https://wura.example", ...extra });
 
 test("the mainnet USDC issuer is pinned to Circle's address", () => {
   assert.equal(CIRCLE_MAINNET_USDC_ISSUER, "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN");
@@ -100,4 +100,20 @@ test("Soroban RPC: testnet has a default, mainnet has none until set, and mainne
   assert.equal(networkFor("mainnet", { SOROBAN_RPC_URL: "https://rpc.example.org" }).sorobanRpcUrl, "https://rpc.example.org");
   assert.ok(bootProblems({ ...mainnet(), SOROBAN_RPC_URL: "https://soroban-testnet.stellar.org" }).some((p) => /SOROBAN_RPC_URL/.test(p)));
   assert.deepEqual(bootProblems(mainnet({ SOROBAN_RPC_URL: "https://rpc.example.org" })), []);
+});
+
+test("TREASURY_SECRET must be a valid key and differ from the other secrets", async () => {
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const k = Keypair.random().secret();
+  assert.deepEqual(bootProblems({ TREASURY_SECRET: k }), []);
+  assert.match(bootProblems({ TREASURY_SECRET: "nope" }).join(), /valid Stellar secret/);
+  assert.match(bootProblems({ TREASURY_SECRET: k, RAMP_TOKEN_KEY: k }).join(), /RAMP_TOKEN_KEY/);
+});
+
+test("mainnet needs the public https APP_URL, not localhost or a Vercel deployment host", () => {
+  const { APP_URL: _drop, ...noUrl } = mainnet();
+  assert.throws(() => assertBootSafe(noUrl), /APP_URL/);
+  assert.throws(() => assertBootSafe(mainnet({ APP_URL: "http://wura.example" })), /APP_URL/);
+  assert.throws(() => assertBootSafe(mainnet({ APP_URL: "https://localhost:3000" })), /APP_URL/);
+  assert.doesNotThrow(() => assertBootSafe(mainnet()));
 });

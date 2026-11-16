@@ -127,7 +127,7 @@ export async function ruleReply(s: Session, message: string): Promise<AgentReply
     const amt = parseAmount(m[1]);
     if (!amt) return { text: "How much should the payment link be for?" };
     const isUsd = /\$/.test(m[1]) || /dollar|usd/.test(m[2] ?? "");
-    const link = createPaymentLink(s, { amount: toMinor(amt), currency: isUsd ? "USDC" : "NGN" });
+    const link = await createPaymentLink(s, { amount: toMinor(amt), currency: isUsd ? "USDC" : "NGN" });
     return {
       text: `Here's a payment link for ${isUsd ? usdc(link.amount) : naira(link.amount)}. Anyone with the link can pay you.`,
       card: { type: "link", link },

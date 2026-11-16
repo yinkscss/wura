@@ -4,6 +4,7 @@ import type { Currency } from "@/lib/types";
 import { config, moneyKilled, moneyLive } from "./config";
 import { ApiFailure } from "./errors";
 import { LINK } from "./ramp/link";
+import type { SeenPayment } from "./paylinks";
 
 /**
  * Stellar testnet access. Server-side only: the UI never talks to Horizon.
@@ -80,7 +81,14 @@ export type AccountStatus = {
   /** NGNC (naira) balance in kobo, or null when there's no trustline. Always null off mainnet. */
   ngn: number | null;
   hasNgncTrustline: boolean;
+  /** SEP-29: the account asks that every payment to it carries a memo (exchanges do). */
+  memoRequired: boolean;
 };
+
+/** SEP-29: the account's data entry config.memo_required is "1" (base64 "MQ=="). */
+export function isMemoRequired(data: Record<string, string> | undefined): boolean {
+  return data?.["config.memo_required"] === "MQ==";
+}
 
 const isCredit = (b: { asset_type: string }) => b.asset_type === "credit_alphanum4" || b.asset_type === "credit_alphanum12";
 
@@ -98,11 +106,59 @@ export async function getAccountStatus(address: string): Promise<AccountStatus> 
       if (c.asset_code === config.usdc.code && c.asset_issuer === config.usdc.issuer) usdc = amountToCents(c.balance);
       if (naira && c.asset_code === naira.getCode() && c.asset_issuer === naira.getIssuer()) ngn = amountToCents(c.balance);
     }
-    return { address, exists: true, xlm, usdc, hasTrustline: usdc !== null, ngn, hasNgncTrustline: ngn !== null };
+    return { address, exists: true, xlm, usdc, hasTrustline: usdc !== null, ngn, hasNgncTrustline: ngn !== null, memoRequired: isMemoRequired((acct as unknown as { data_attr?: Record<string, string> }).data_attr) };
   } catch (err) {
-    if (isNotFound(err)) return { address, exists: false, xlm: "0", usdc: null, hasTrustline: false, ngn: null, hasNgncTrustline: false };
+    if (isNotFound(err)) return { address, exists: false, xlm: "0", usdc: null, hasTrustline: false, ngn: null, hasNgncTrustline: false, memoRequired: false };
     throw networkError(err);
   }
+}
+
+/**
+ * Payments received by an address that carry this exact text memo, newest first
+ * (up to 200 recent payments are looked at). Failed transactions and payments
+ * to anyone else are left out. Used by payment links (M5).
+ */
+export async function incomingPaymentsWithMemo(address: string, memo: string, since = 0): Promise<SeenPayment[]> {
+  const out: SeenPayment[] = [];
+  let page;
+  try {
+    page = await server().payments().forAccount(address).order("desc").limit(200).join("transactions").call();
+  } catch (err) {
+    if (isNotFound(err)) return [];
+    throw networkError(err);
+  }
+  // Walk back through older pages until we pass the moment the link was made (at most 10 pages, 2000 payments),
+  // so a busy account can't push the matching payment out of view.
+  for (let pages = 0; pages < 10; pages++) {
+    const records = page.records as unknown as Array<Record<string, unknown>>;
+    if (records.length === 0) break;
+    for (const r of records) {
+      const type = String(r.type);
+      if (type !== "payment" && type !== "path_payment_strict_send" && type !== "path_payment_strict_receive") continue;
+      if (r.to !== address || r.transaction_successful === false) continue;
+      // With join=transactions the SDK keeps the joined object in transaction_attr; `transaction` becomes a lazy-fetch function.
+      const tx = (r.transaction_attr ?? r.transaction) as { memo_type?: string; memo?: string } | undefined;
+      if (!tx || tx.memo_type !== "text" || tx.memo !== memo) continue;
+      const native = r.asset_type === "native";
+      out.push({
+        id: String(r.id),
+        hash: String(r.transaction_hash),
+        amount: String(r.amount),
+        assetCode: native ? "XLM" : String(r.asset_code),
+        assetIssuer: native ? "" : String(r.asset_issuer),
+        memo,
+        at: Date.parse(String(r.created_at)),
+      });
+    }
+    const oldest = Date.parse(String(records[records.length - 1].created_at));
+    if (records.length < 200 || oldest < since) break;
+    try {
+      page = await page.next();
+    } catch (err) {
+      throw networkError(err);
+    }
+  }
+  return out;
 }
 
 /** Testnet only: creates and funds the account with test XLM. */
@@ -218,6 +274,48 @@ export async function getAccountSigners(address: string): Promise<AccountSigners
   }
 }
 
+export type SponsorInfo = {
+  exists: boolean;
+  /** XLM balance. */
+  xlm: number;
+  /** XLM free to spend or lock up: balance minus the minimum balance (reserves). */
+  available: number;
+  /** Ledger entries this account sponsors for others (an account is 1, a trustline is 1). */
+  sponsoringEntries: number;
+  sponsoredAccounts: number;
+};
+
+/** The treasury's balance and sponsorship load, straight from Horizon. */
+export async function getSponsorInfo(address: string): Promise<SponsorInfo> {
+  try {
+    const a = (await server().loadAccount(address)) as unknown as {
+      balances: Array<{ asset_type: string; balance: string }>;
+      subentry_count: number;
+      num_sponsoring?: number;
+      num_sponsored?: number;
+    };
+    const xlm = Number(a.balances.find((b) => b.asset_type === "native")?.balance ?? "0");
+    const sponsoring = a.num_sponsoring ?? 0;
+    const minimum = (2 + a.subentry_count + sponsoring - (a.num_sponsored ?? 0)) * 0.5;
+    // If this fails the account cap can't be checked, so setup must stop (networkError below).
+    const page = await server().accounts().sponsor(address).limit(200).call();
+    const sponsoredAccounts = page.records.length;
+    return { exists: true, xlm, available: xlm - minimum, sponsoringEntries: sponsoring, sponsoredAccounts };
+  } catch (err) {
+    if (isNotFound(err)) return { exists: false, xlm: 0, available: 0, sponsoringEntries: 0, sponsoredAccounts: 0 };
+    throw networkError(err);
+  }
+}
+
+/** Loads an account as an sdk Account (with its current sequence) to build a transaction from. */
+export async function loadSourceAccount(address: string) {
+  try {
+    return await server().loadAccount(address);
+  } catch (err) {
+    throw networkError(err);
+  }
+}
+
 /** Checks a 64-byte ed25519 signature over the transaction hash. */
 export function verifySignature(address: string, hashHex: string, signatureHex: string) {
   const sig = Buffer.from(signatureHex.replace(/^0x/, ""), "hex");
@@ -241,15 +339,70 @@ export function attachSignature(xdr: string, address: string, signatureHex: stri
   return tx;
 }
 
+/** A submit whose result we couldn't learn (timeout, dropped connection). It may have landed. */
+export class SubmitUnconfirmed extends Error {
+  constructor(public hash: string) {
+    super("Couldn't confirm whether the transaction went through.");
+  }
+}
+
+export type HorizonLike = {
+  submitTransaction(tx: Transaction): Promise<{ hash: string }>;
+  transactions(): { transaction(hash: string): { call(): Promise<{ successful?: boolean }> } };
+};
+
+type ResultCodes = { transaction?: string; operations?: string[] };
+const resultCodes = (err: unknown): ResultCodes | undefined =>
+  (err as { response?: { data?: { extras?: { result_codes?: ResultCodes } } } })?.response?.data?.extras?.result_codes;
+
+/** What Horizon knows about a transaction hash: it landed, it failed on chain, or it isn't there. */
+export async function txOutcome(h: HorizonLike, hash: string): Promise<"success" | "failed" | "not_found"> {
+  try {
+    const t = await h.transactions().transaction(hash).call();
+    return t.successful === false ? "failed" : "success";
+  } catch (err) {
+    if (isNotFound(err)) return "not_found";
+    throw err;
+  }
+}
+
+/**
+ * Submits safely. Sending the same signed transaction again can't pay twice
+ * (same hash), so every doubtful case is settled by asking Horizon whether the
+ * hash landed:
+ *   - rejected with result codes: a real failure, except tx_bad_seq, which is also
+ *     what a resubmit of a transaction that already landed looks like;
+ *   - no result (timeout, network): wait and look the hash up; if it still isn't
+ *     there, throw SubmitUnconfirmed so the caller can retry the same signed XDR later.
+ */
+export async function submitWith(h: HorizonLike, tx: Transaction, opts: { pollMs?: number; polls?: number } = {}): Promise<string> {
+  const hash = tx.hash().toString("hex");
+  const pollMs = opts.pollMs ?? 2000;
+  const polls = opts.polls ?? 3;
+  try {
+    const res = await h.submitTransaction(tx);
+    return res.hash;
+  } catch (err) {
+    const codes = resultCodes(err);
+    if (codes) {
+      if (codes.transaction === "tx_bad_seq" && (await txOutcome(h, hash).catch(() => "not_found")) === "success") return hash;
+      throw submitError(err);
+    }
+    for (let i = 0; i < polls; i++) {
+      if (pollMs > 0) await new Promise((r) => setTimeout(r, pollMs));
+      const o = await txOutcome(h, hash).catch(() => "not_found" as const);
+      if (o === "success") return hash;
+      if (o === "failed") throw new ApiFailure("BAD_REQUEST", "Stellar rejected the transaction. Nothing was sent.", 422);
+    }
+    console.error("submit unconfirmed", hash, err);
+    throw new SubmitUnconfirmed(hash);
+  }
+}
+
 /** Submits and returns the transaction hash, or throws a plain-language error. */
 export async function submit(tx: Transaction): Promise<string> {
   assertMoneyOn();
-  try {
-    const res = await server().submitTransaction(tx);
-    return res.hash;
-  } catch (err) {
-    throw submitError(err);
-  }
+  return submitWith(server() as unknown as HorizonLike, tx);
 }
 
 function isNotFound(err: unknown) {

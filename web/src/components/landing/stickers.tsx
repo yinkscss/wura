@@ -75,19 +75,24 @@ export function StickerImg({
   style?: CSSProperties;
 }) {
   const [w, h] = STICKERS[name];
+  // The shadow lives on a wrapper so it is drawn from the already-masked image.
+  // On the same element, a fade mask would clip the shadow at the image's
+  // rectangular box and leave a visible square edge.
   return (
-    <Image
-      src={`/landing/stickers/${name}.webp`}
-      alt=""
-      width={w}
-      height={h}
-      sizes={sizes}
-      loading="lazy"
-      decoding="async"
-      draggable={false}
-      className={cx("block h-auto w-full select-none", className)}
-      style={{ filter: STICKER_SHADOW, ...style }}
-    />
+    <span className="block" style={{ filter: STICKER_SHADOW }}>
+      <Image
+        src={`/landing/stickers/${name}.webp`}
+        alt=""
+        width={w}
+        height={h}
+        sizes={sizes}
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+        className={cx("block h-auto w-full select-none", className)}
+        style={style}
+      />
+    </span>
   );
 }
 

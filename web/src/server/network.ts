@@ -6,6 +6,8 @@
  * See docs/mainnet-plan.md, M1.
  */
 
+import { StrKey } from "@stellar/stellar-sdk";
+
 export type MoneyMode = "mock" | "testnet" | "mainnet";
 export type NetworkName = "testnet" | "mainnet";
 
@@ -86,6 +88,13 @@ export function bootProblems(env: Env): string[] {
   const net = networkFor(mode, env);
   const problems: string[] = [];
 
+  const treasury = (env.TREASURY_SECRET || "").trim();
+  if (treasury) {
+    if (!StrKey.isValidEd25519SecretSeed(treasury)) problems.push("TREASURY_SECRET isn't a valid Stellar secret key.");
+    for (const other of ["SESSION_SECRET", "AGENT_KEY_SECRET", "RAMP_TOKEN_KEY", "DEV_KEY_SECRET"]) {
+      if ((env[other] || "").trim() === treasury) problems.push(`TREASURY_SECRET must not be the same as ${other}.`);
+    }
+  }
   if (mode === "testnet" && net.usdcIssuer === CIRCLE_MAINNET_USDC_ISSUER) {
     problems.push("Testnet is set to use the mainnet USDC issuer.");
   }
@@ -108,6 +117,11 @@ export function bootProblems(env: Env): string[] {
   }
   if ((env.SESSION_SECRET || "").length < 32) {
     problems.push("SESSION_SECRET (32+ characters) is required on mainnet.");
+  }
+  // Payment links carry this address to strangers. VERCEL_URL changes every deploy and can sit behind a login wall.
+  const appUrl = (env.APP_URL || "").trim();
+  if (!/^https:\/\/[^/\s]+/i.test(appUrl) || /^https:\/\/(localhost|127\.|\[::1\])/i.test(appUrl)) {
+    problems.push("APP_URL (the public https address of the app, e.g. https://wura.app) is required on mainnet.");
   }
   if ((env.TESTNET_CONTACTS || "").trim().length > 0) {
     problems.push("TESTNET_CONTACTS is set. Testnet addresses must not become contacts on mainnet.");

@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { PaymentLink, Quote, SendIntent, VenueQuote } from "@/lib/types";
 import { day, money, naira, rate, usdcNumber } from "@/lib/format";
+import { linkStateText } from "@/server/paylinks";
 import { CheckIcon, ClockIcon, CopyIcon, LinkIcon, ShareIcon } from "./icons";
 import { Button, Eyebrow, Pill, cx } from "./ui";
 
@@ -195,11 +196,11 @@ export function SendCard({
         <Eyebrow>{state === "done" ? "Sent" : "Confirm send · not sent yet"}</Eyebrow>
         <div className="mt-2 text-[15px] font-medium text-muted">You’re sending</div>
         <div className="nums mt-0.5 text-[40px] font-bold leading-none tracking-[-0.045em]">
-          {usdcNumber(intent.amount)} <span className="text-pink-deep">USDC</span>
+          {intent.asset === "NGN" ? naira(intent.amount) : usdcNumber(intent.amount)} <span className="text-pink-deep">{intent.asset === "NGN" ? "NGNC" : "USDC"}</span>
         </div>
         <div className="mt-2 text-[14px] text-muted">
           to {intent.to.name}
-          {!intent.to.name.includes("…") && <span className="font-mono text-[12.5px]"> ({intent.to.address.slice(0, 4)}…{intent.to.address.slice(-4)})</span>} · from your USDC balance
+          {!intent.to.name.includes("…") && <span className="font-mono text-[12.5px]"> ({intent.to.address.slice(0, 4)}…{intent.to.address.slice(-4)})</span>} · from your {intent.asset === "NGN" ? "naira" : "USDC"} balance
         </div>
       </div>
       <div className="h-px bg-line" />
@@ -211,14 +212,15 @@ export function SendCard({
         ) : (
           <Field label="Fee (example)" value={`${usdcNumber(intent.fee)} USDC`} />
         )}
-        <Field label="Your balance" value={`${usdcNumber(intent.balanceBefore)} USDC`} />
-        <Field label="Total debit" value={`${usdcNumber(intent.total)} USDC`} />
+        {intent.memo && <Field label="Memo" value={intent.memo.value} />}
+        <Field label="Your balance" value={money(intent.balanceBefore, intent.asset)} />
+        <Field label="Total debit" value={money(intent.total, intent.asset)} />
       </div>
       <div className="flex gap-3 rounded-2xl bg-mist p-4">
         <ClockIcon size={18} className="mt-0.5 shrink-0 text-pink-deep" />
         <div className="flex-1 text-[14px] leading-snug text-muted">
-          <span className="font-bold text-blue">Daily limit after this</span> — {usdcNumber(intent.dailyRemainingAfter)} of{" "}
-          {usdcNumber(intent.dailyLimit)} USDC left
+          <span className="font-bold text-blue">Daily limit after this</span> — {money(intent.dailyRemainingAfter, intent.asset)} of{" "}
+          {money(intent.dailyLimit, intent.asset)} left
           <div className="my-2.5 h-1.5 overflow-hidden rounded-full bg-line">
             <motion.div
               className="h-full rounded-full bg-pink"
@@ -227,7 +229,7 @@ export function SendCard({
               transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
             />
           </div>
-          Per-payment cap {usdcNumber(intent.perPaymentCap)} USDC · within limit
+          Per-payment cap {money(intent.perPaymentCap, intent.asset)} · within limit
           <div className="mt-1 text-[12px] text-soft">Example limits. Real amounts aren’t set yet.</div>
         </div>
       </div>
@@ -303,7 +305,7 @@ export function LinkCard({ link }: { link: PaymentLink }) {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <Eyebrow>Payment link · active</Eyebrow>
+        <Eyebrow>Payment link · {link.status === "paid" ? "paid" : link.status === "expired" ? "expired" : "active"}</Eyebrow>
         <div className="nums mt-2 text-[40px] font-bold leading-none tracking-[-0.045em]">{amount}</div>
         <div className="mt-2 text-[14px] text-muted">Request · expires {day(link.expiresAt)} (7 days)</div>
       </div>
@@ -313,7 +315,7 @@ export function LinkCard({ link }: { link: PaymentLink }) {
       </div>
       <div className="h-px bg-line" />
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Status" value="Open · not paid yet" />
+        <Field label="Status" value={linkStateText(link, money)} />
         <Field label="Currency" value={link.currency} />
       </div>
       <div className="grid grid-cols-[1fr_1.3fr] gap-3">
@@ -336,7 +338,7 @@ export function LinkCard({ link }: { link: PaymentLink }) {
         </Button>
       </div>
       {shared && <p className="text-center text-[12.5px] text-muted">{shared}</p>}
-      <p className="text-[12px] text-soft">Example link on a reserved test domain. It isn’t a working payment page yet.</p>
+      <p className="text-[12px] text-soft">The payer sees your address and a memo, and pays straight into your wallet. Wura marks this paid when the payment arrives.</p>
     </div>
   );
 }
