@@ -489,11 +489,11 @@ function submitError(err: unknown) {
   const op = codes?.operations?.[0];
   const txc = codes?.transaction;
   const msg: Record<string, string> = {
-    op_underfunded: `Your wallet doesn't have enough USDC for that on ${config.stellarNetwork}.`,
+    op_underfunded: `Your wallet doesn't have enough for that on ${config.stellarNetwork}.`,
     op_no_trust: "The other account can't receive USDC yet: it has no USDC trustline.",
     op_no_destination: `That account doesn't exist on ${config.stellarNetwork} yet.`,
     op_line_full: "The other account can't hold that much USDC.",
-    op_src_no_trust: "Your wallet isn't set up for USDC yet. Set it up first.",
+    op_src_no_trust: "Your wallet isn't set up for that currency yet. Set it up first.",
     op_low_reserve: "Your wallet needs a little more XLM to do that.",
     op_under_dest_min: "The price moved before the swap landed, so nothing was swapped. Ask for a fresh quote.",
     op_too_few_offers: "There wasn't enough on the market to fill that swap, so nothing was swapped. Try a smaller amount.",

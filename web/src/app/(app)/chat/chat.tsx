@@ -123,7 +123,7 @@ export function Chat() {
         const got = quote.to === "USDC" ? usdc(quote.amountOut) : naira(quote.amountOut);
         say(`Done. ${got} is in your wallet. Reference ${res.activity.txRef} (mock — nothing was broadcast).`);
       } else {
-        say(`Swapped. ${res.activity.amount} arrived in your wallet.`, undefined, res.activity.explorerUrl);
+        say(`Swapped. You got ${res.activity.amount}.`, undefined, res.activity.explorerUrl);
       }
       void refresh();
     } catch (e) {

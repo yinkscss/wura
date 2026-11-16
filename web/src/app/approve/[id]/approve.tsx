@@ -123,7 +123,7 @@ export function Approve({ params }: { params: Promise<{ id: string }> }) {
       setResult(
         res.mock
           ? { text: `Done. ${got} is in your wallet (mock — nothing was broadcast).` }
-          : { text: `Swapped. ${res.activity.amount} arrived in your wallet.`, href: res.activity.explorerUrl },
+          : { text: `Swapped. You got ${res.activity.amount}.`, href: res.activity.explorerUrl },
       );
       void refresh();
     } catch (e) {

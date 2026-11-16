@@ -46,7 +46,7 @@ test("a normal submit returns the hash", async () => {
 test("a real rejection is an error and is not retried or looked up", async () => {
   let looked = 0;
   const h = fake({ submit: async () => { throw horizonError({ transaction: "tx_failed", operations: ["op_underfunded"] }, 400); }, outcome: async () => { looked++; return {}; } });
-  await assert.rejects(submitWith(h, mk(), fast), (e: unknown) => e instanceof ApiFailure && /enough USDC/.test(e.message));
+  await assert.rejects(submitWith(h, mk(), fast), (e: unknown) => e instanceof ApiFailure && /doesn.t have enough/.test(e.message));
   assert.equal(looked, 0);
 });
 
