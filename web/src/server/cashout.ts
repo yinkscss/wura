@@ -224,6 +224,8 @@ export async function approveCashOutPayment(
  */
 export function cashOutSubmitCheck(s: Session, tokenFor: TokenFor, deps: CashOutDeps = live) {
   return async (w: WalletState, intent: SendIntent, txHash: string) => {
+    // A preview that was replaced, cancelled or refused can't be paid, even with a signature for it.
+    if (intent.status !== "pending") throw refuse("ALREADY_USED", "That cash-out payment was replaced or cancelled, so nothing was sent. Check the cash-out again.");
     const { id, from } = intent.cashOut!;
     alreadyPaid(w, id, txHash);
     const { p, memo } = await readPayment(s, id, from, await tokenFor(from), deps);

@@ -179,3 +179,27 @@ test("a cash-out can't be approved by createSend (chat or web) or an approval li
   const r = await C.approveCashOutPayment(s, { intentId: i.id, approve: true }, noToken, d);
   await assert.rejects(submitSigned(s, { txId: r.txId, signature: "00".repeat(64) }), /cash-out screen/);
 });
+
+test("before submit: a preview that was replaced can't be paid with its old signature", async () => {
+  const s = session();
+  const d = deps(s, () => pay());
+  const w = wallet(s.userId);
+  const first = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
+  await C.approveCashOutPayment(s, { intentId: first.id, approve: true }, noToken, d);
+  await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d); // a fresh look replaces it
+  await assert.rejects(C.cashOutSubmitCheck(s, noToken, d)(w, first, "hash-a"), refused("ALREADY_USED"));
+  assert.equal(w.cashOutPaid?.["co-1"], undefined);
+});
+
+test("a hash memo builds into the transaction as the partner's 32 bytes", async () => {
+  const { Account, Operation } = await import("@stellar/stellar-sdk");
+  const { buildTx, toMemo } = await import("./stellar");
+  const raw = Buffer.alloc(32, 9);
+  const memo = C.partnerMemo("hash", raw.toString("base64"));
+  const op = Operation.payment({ destination: partner, asset: ngnc, amount: "1.0000000" });
+  const built = buildTx(new Account(user, "1"), op, toMemo(memo as { type: "hash"; value: string }));
+  const { TransactionBuilder } = await import("@stellar/stellar-sdk");
+  const tx = TransactionBuilder.fromXDR(built.xdr, "Public Global Stellar Network ; September 2015") as import("@stellar/stellar-sdk").Transaction;
+  assert.equal(tx.memo.type, "hash");
+  assert.deepEqual(Buffer.from(tx.memo.value as Buffer), raw);
+});
