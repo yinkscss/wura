@@ -2,6 +2,7 @@ import { ChatApprovalsCard } from "@/components/chat-approvals";
 import { ConnectedAppsCard } from "@/components/connected-apps";
 import { Card } from "@/components/ui";
 import { TelegramCard } from "@/components/telegram-card";
+import { WhatsAppCard } from "@/components/whatsapp-card";
 import { ConnectedApps, PageHeader } from "@/components/wallet-parts";
 
 export default function ChannelsPage() {
@@ -20,6 +21,7 @@ export default function ChannelsPage() {
       </div>
       <ConnectedAppsCard />
       <TelegramCard />
+      <WhatsAppCard />
       <ChatApprovalsCard />
     </div>
   );
