@@ -4,6 +4,7 @@ import { ApiFailure } from "../errors";
 import type { Session } from "../session";
 import { loadAnchor, type AnchorEndpoints, type AnchorPin } from "./sep1";
 import { ChallengeError, checkChallenge, exchangeChallenge, fetchChallenge, readAnchorToken, signChallenge } from "./sep10";
+import { statusMessage } from "./messages";
 import { getInfo, getTransfer, startInteractive, toMinor, type Sep24Info } from "./sep24";
 import type { PartnerSignIn, RampCurrency, RampProvider } from "./types";
 
@@ -135,7 +136,7 @@ async function mainnetHolding(account: string, receive: RampCurrency): Promise<n
   const notReady = () =>
     new ApiFailure(
       "SIGNING_UNAVAILABLE",
-      `Your wallet isn't set up to hold ${receive === "NGN" ? "naira" : "dollars"} with the naira partner yet. Nothing was sent.`,
+      `Your wallet needs a one-time setup before it can hold ${receive === "NGN" ? "naira" : "dollars"}. Finish setting up your wallet, then try again. Nothing was sent.`,
       409,
     );
   let res: Response;
@@ -224,7 +225,7 @@ export const linkRamp: RampProvider = {
     try {
       const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
       if (t.kind !== "deposit") throw new Error("not a top-up");
-      return { id, state: t.state, currency: receive, received: t.amountOut, fee: t.fee, txRef: t.stellarTxId };
+      return { id, state: t.state, message: statusMessage("topup", t.anchorStatus), currency: receive, received: t.amountOut, fee: t.fee, txRef: t.stellarTxId };
     } catch (err) {
       unreachable(err);
     }
@@ -260,7 +261,7 @@ export const linkRamp: RampProvider = {
     try {
       const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
       if (t.kind !== "withdrawal") throw new Error("not a cash-out");
-      return { id, state: t.state, currency: from, send: t.amountIn, fee: t.fee, readyToPay: t.payTo !== null, txRef: t.stellarTxId };
+      return { id, state: t.state, message: statusMessage("cashout", t.anchorStatus), currency: from, send: t.amountIn, fee: t.fee, readyToPay: t.payTo !== null, txRef: t.stellarTxId };
     } catch (err) {
       unreachable(err);
     }

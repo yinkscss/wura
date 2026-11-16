@@ -127,6 +127,65 @@ create table if not exists telegram_updates (
   update_id bigint primary key,
   at        timestamptz not null default now()
 );
+
+-- Naira partner (docs/mainnet-plan.md, Otowo's path 3). Serverless keeps
+-- nothing in memory, so the partner sign-in and every top-up and cash-out are
+-- stored here. No identity or bank details: the partner collects those on its
+-- own page and Wura never sees them.
+
+-- One partner sign-in per user and service ('NGN' keeps naira, 'USDC' pays
+-- dollars; each is a separate partner service). The token lets the server read
+-- that user's transfers and open a partner page for them, nothing else. It is
+-- stored encrypted (AES-256-GCM, key from RAMP_TOKEN_KEY), never in the clear,
+-- and the row is deleted when it expires (about a day). key_version says which
+-- RAMP_TOKEN_KEY encrypted the row, so the key can be rotated.
+create table if not exists ramp_sessions (
+  user_id    text not null,
+  service    text not null,
+  address    text not null,
+  token_enc  text not null,
+  key_version smallint not null default 1,
+  expires_at timestamptz not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, service),
+  check (service in ('NGN', 'USDC'))
+);
+
+-- One row per top-up or cash-out started with the partner. Amounts are minor
+-- units (kobo or cents) of the service's currency. state is Wura's plain state
+-- (waiting_for_you, processing, done, failed); anchor_status is the partner's
+-- own word, kept for support. logged_at is set exactly once, in the same
+-- statement that claims the right to write the activity row, so a transfer is
+-- never logged twice. flagged_at marks one that has been open too long.
+create table if not exists ramp_transfers (
+  id              text primary key,
+  user_id         text not null,
+  address         text not null,
+  provider        text not null,
+  service         text not null,
+  kind            text not null,
+  anchor_tx_id    text not null,
+  amount          bigint not null,
+  state           text not null,
+  anchor_status   text not null,
+  amount_in       bigint,
+  amount_out      bigint,
+  fee             bigint,
+  stellar_tx_id   text,
+  logged_at       timestamptz,
+  flagged_at      timestamptz,
+  last_checked_at timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  unique (provider, service, anchor_tx_id),
+  check (service in ('NGN', 'USDC')),
+  check (kind in ('topup', 'cashout')),
+  check (state in ('waiting_for_you', 'processing', 'done', 'failed'))
+);
+create index if not exists ramp_transfers_user on ramp_transfers (user_id, created_at desc);
+-- What the reconcile job reads: only transfers that are still open.
+create index if not exists ramp_transfers_open on ramp_transfers (last_checked_at nulls first)
+  where state in ('waiting_for_you', 'processing');
 `;
 
 /** Creates the tables once per process (idempotent). Also: npm run db:migrate. */

@@ -98,6 +98,8 @@ export type PartnerSession = { token: string; /** Unix ms. */ expiresAt: number 
 export type TopUpStatus = {
   id: string;
   state: "waiting_for_you" | "processing" | "done" | "failed";
+  /** What to tell the user, in words they can act on. */
+  message: string;
   currency: RampCurrency;
   /** What arrived in the wallet, once the partner says. */
   received: number | null;
@@ -119,6 +121,8 @@ export type PartnerCashOut = Omit<PartnerTopUp, "currency"> & {
 export type CashOutStatus = {
   id: string;
   state: "waiting_for_you" | "processing" | "done" | "failed";
+  /** What to tell the user, in words they can act on. */
+  message: string;
   currency: RampCurrency;
   /** What the wallet has to send, once the partner says. Minor units of `currency`. */
   send: number | null;

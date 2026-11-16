@@ -148,7 +148,8 @@ export type TransferState =
   | "done"
   | "failed";
 
-const STATE: Record<string, TransferState> = {
+/** Every status SEP-24 defines, mapped to a plain state. Exported so the messages can be checked against it. */
+export const STATE: Record<string, TransferState> = {
   incomplete: "waiting_for_you",
   pending_user_transfer_start: "waiting_for_you",
   pending_user: "waiting_for_you",
