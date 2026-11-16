@@ -32,7 +32,7 @@ test("mainnet wallets need both trustlines; the fee balance defaults to 0.5 XLM"
 
 const { prepareSponsoredSetup } = await import("./treasury");
 const { ApiFailure } = await import("./errors");
-const st = { address: "GAAAA", exists: false, xlm: "0", usdc: null, hasTrustline: false, ngn: null, hasNgncTrustline: false };
+const st = { address: "GAAAA", exists: false, xlm: "0", usdc: null, hasTrustline: false, ngn: null, hasNgncTrustline: false, memoRequired: false };
 
 test("the kill switch stops the treasury before it touches Horizon or its key", async () => {
   // Mainnet mode here, so the kill switch applies (it applies to any live mode).

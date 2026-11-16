@@ -55,6 +55,9 @@ export type Quote = {
 /** A saved recipient ("favourite"). */
 export type Contact = { name: string; address: string };
 
+/** A memo the sender attached (text up to 28 bytes, or a numeric id). Exchanges often require one. */
+export type PaymentMemo = { type: "text" | "id"; value: string };
+
 export type SendIntent = {
   id: string;
   /** When it was first prepared; an approval link stops rebuilding it after a day. */
@@ -62,6 +65,8 @@ export type SendIntent = {
   /** `saved` is false when the user typed a raw address that isn't in their favourites. */
   to: { name: string; address: string; saved?: boolean };
   asset: Currency;
+  /** Optional memo for the payment. Required when the recipient asks for one (SEP-29). */
+  memo?: PaymentMemo;
   amount: number;
   fee: number;
   total: number;

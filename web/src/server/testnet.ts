@@ -1,6 +1,6 @@
 import "server-only";
-import type { NeedsSignature, SendIntent, WalletStatus } from "@/lib/types";
-import { usdc } from "@/lib/format";
+import type { Currency, NeedsSignature, PaymentMemo, SendIntent, WalletStatus } from "@/lib/types";
+import { money } from "@/lib/format";
 import { config, serverDevSigning, moneyLive } from "./config";
 import { devKeypairFor } from "./dev-keys";
 import { ApiFailure } from "./errors";
@@ -8,16 +8,19 @@ import { checkLimits, log } from "./money";
 import type { Session } from "./session";
 import {
   attachSignature,
+  SubmitUnconfirmed,
   assetFor,
-  buildUsdcPayment,
+  buildPayment,
   buildUsdcTrustline,
   fundWithFriendbot,
   getAccountStatus,
   signWithKeypair,
   submit,
   verifySignature,
+  type AccountStatus,
   type BuiltTx,
 } from "./stellar";
+import { TransactionBuilder, type Transaction } from "@stellar/stellar-sdk";
 import { prepareSponsoredSetup, sponsorshipConfigured } from "./treasury";
 import { newId, wallet, type PendingTx, type WalletState } from "./store";
 
@@ -97,51 +100,86 @@ export async function setupWallet(s: Session): Promise<{ status: "ready"; wallet
   return needsSignature(s, park(w, tx, "trustline"));
 }
 
-/** Validates a destination before showing a send preview. */
-export async function checkDestination(address: string, name: string) {
-  const st = await getAccountStatus(address);
-  if (!st.exists) throw new ApiFailure("UNKNOWN_CONTACT", `${name}'s account doesn't exist on ${config.stellarNetwork} yet.`, 404);
-  if (!st.hasTrustline) {
-    throw new ApiFailure("UNKNOWN_CONTACT", `${name}'s account can't receive USDC yet: it has no USDC trustline.`, 409);
+const assetName = (c: Currency) => (c === "NGN" ? "naira (NGNC)" : "USDC");
+
+/**
+ * Validates a destination before a send preview and again before it is signed
+ * and submitted: the account exists, it can receive this asset (trustline), and
+ * if it asks for a memo (SEP-29, exchanges do) the payment carries one.
+ */
+export async function checkDestination(address: string, name: string, asset: Currency = "USDC", memo?: PaymentMemo) {
+  if (!assetFor(asset)) {
+    throw new ApiFailure("BAD_REQUEST", `${assetName(asset)} isn't available on ${config.stellarNetwork}.`, 409);
   }
+  const problem = destinationProblem(await getAccountStatus(address), name, asset, memo);
+  if (problem) throw problem;
 }
 
-/** Real USDC balance (cents). Throws a clear error if the wallet isn't set up. */
-export async function usdcBalance(s: Session) {
+/** The pure part of checkDestination: what's wrong with this destination for this payment, if anything. */
+export function destinationProblem(st: AccountStatus, name: string, asset: Currency, memo?: PaymentMemo): ApiFailure | null {
+  if (!st.exists) return new ApiFailure("UNKNOWN_CONTACT", `${name}'s account doesn't exist on ${config.stellarNetwork} yet.`, 404);
+  if (!(asset === "USDC" ? st.hasTrustline : st.hasNgncTrustline)) {
+    return new ApiFailure("UNKNOWN_CONTACT", `${name}'s account can't receive ${assetName(asset)} yet: it has no trustline for it.`, 409);
+  }
+  if (st.memoRequired && !memo) {
+    return new ApiFailure("BAD_REQUEST", `${name}'s account needs a memo on every payment (exchanges ask for this). Add the memo they gave you and try again.`, 409);
+  }
+  return null;
+}
+
+/** Real balance of an asset (minor units). Throws a clear error if the wallet isn't set up for it. */
+export async function assetBalance(s: Session, asset: Currency) {
+  if (!assetFor(asset)) throw new ApiFailure("BAD_REQUEST", `${assetName(asset)} isn't available on ${config.stellarNetwork}.`, 409);
   const st = await getAccountStatus(s.address);
-  if (!st.exists || !st.hasTrustline) {
-    throw new ApiFailure("BAD_REQUEST", "Your testnet wallet isn't set up for USDC yet. Set it up on the wallet page first.", 409);
+  const ok = st.exists && (asset === "USDC" ? st.hasTrustline : st.hasNgncTrustline);
+  if (!ok) {
+    throw new ApiFailure("BAD_REQUEST", `Your wallet isn't set up for ${assetName(asset)} yet. Set it up on the wallet page first.`, 409);
   }
-  return st.usdc ?? 0;
+  return (asset === "USDC" ? st.usdc : st.ngn) ?? 0;
 }
 
+/** Real USDC balance (cents). */
+export const usdcBalance = (s: Session) => assetBalance(s, "USDC");
+
+/** Everything that can change between the preview and the signature, checked again. */
 export async function recheckSend(s: Session, w: WalletState, intent: SendIntent) {
   if (intent.status !== "pending") throw new ApiFailure("ALREADY_USED", "That payment was already sent or cancelled.", 409);
-  checkLimits(w, "USDC", intent.amount);
-  const bal = await usdcBalance(s);
+  checkLimits(w, intent.asset, intent.amount);
+  const bal = await assetBalance(s, intent.asset);
   if (intent.total > bal) {
-    throw new ApiFailure("INSUFFICIENT_BALANCE", `You don't have enough USDC. Your testnet balance is ${usdc(bal)}.`, 403);
+    throw new ApiFailure("INSUFFICIENT_BALANCE", `You don't have enough ${assetName(intent.asset)}. Your balance is ${money(bal, intent.asset)}.`, 403);
   }
+  await checkDestination(intent.to.address, intent.to.name, intent.asset, intent.memo);
 }
 
+/** Records a sent payment once. Calling it again for the same intent returns the same entry. */
 export function finishSend(w: WalletState, intent: SendIntent, hash: string) {
+  if (intent.status === "sent") {
+    const prior = w.activity.find((a) => a.txRef === hash);
+    if (prior) return prior;
+  }
   intent.status = "sent";
-  w.spentToday.USDC += intent.amount;
+  w.spentToday[intent.asset] += intent.amount;
   return log(w, {
     kind: "send",
     detail: `To ${intent.to.name}`,
-    amount: usdc(intent.amount),
+    amount: money(intent.amount, intent.asset),
     status: "done",
     txRef: hash,
     explorerUrl: config.explorerTx(hash),
   });
 }
 
-/** Called by createSend after approval in testnet mode. */
+/** The payment for an approved intent: the right asset, and its memo if it has one. */
+export function buildIntentPayment(s: Session, intent: SendIntent) {
+  return buildPayment({ from: s.address, to: intent.to.address, currency: intent.asset, cents: intent.amount, memo: intent.memo });
+}
+
+/** Called by createSend after approval on a live network. */
 export async function startTestnetSend(s: Session, intent: SendIntent) {
   const w = wallet(s.userId);
   await recheckSend(s, w, intent);
-  const tx = await buildUsdcPayment(s.address, intent.to.address, intent.amount);
+  const tx = await buildIntentPayment(s, intent);
   if (serverDevSigning()) {
     const hash = await submit(signWithKeypair(tx.xdr, devKeypairFor(s.email)));
     const activity = finishSend(w, intent, hash);
@@ -150,33 +188,47 @@ export async function startTestnetSend(s: Session, intent: SendIntent) {
   return { ...needsSignature(s, park(w, tx, "send", intent.id)), intent };
 }
 
-/** The user's wallet signed the hash. Verify, re-check and submit. */
+/** The user's wallet signed the hash. Verify, re-check and submit. A repeat never pays twice. */
 export async function submitSigned(s: Session, input: { txId: string; signature: string }) {
   const w = wallet(s.userId);
   const p = w.pendingTx.get(String(input.txId));
   if (!p) throw new ApiFailure("INTENT_NOT_FOUND", "That transaction isn't waiting for a signature. Ask again.", 404);
-  if (p.status !== "pending") throw new ApiFailure("ALREADY_USED", "That transaction was already submitted.", 409);
-  if (Date.now() > p.expiresAt) {
-    p.status = "failed";
-    throw new ApiFailure("QUOTE_EXPIRED", "That took too long to sign, so it expired. Ask again.", 410);
-  }
-  const sig = String(input.signature ?? "");
-  if (!/^(0x)?[0-9a-fA-F]{128}$/.test(sig) || !verifySignature(s.address, p.hash, sig)) {
-    throw new ApiFailure("NOT_APPROVED", "The signature didn't match your wallet, so nothing was sent.", 403);
-  }
 
+  let signed: Transaction;
   let intent: SendIntent | undefined;
   if (p.kind === "send") {
     intent = w.sends.get(p.intentId ?? "");
     if (!intent) throw new ApiFailure("INTENT_NOT_FOUND", "That payment preview doesn't exist any more.", 404);
-    await recheckSend(s, w, intent);
+  }
+
+  if (p.status === "unconfirmed" && p.signedXdr) {
+    // We never learned if it landed. The same signed transaction can't pay twice, so ask Horizon again.
+    // No fresh balance or limit checks here: if it landed, they already moved.
+    signed = TransactionBuilder.fromXDR(p.signedXdr, config.networkPassphrase) as Transaction;
+  } else {
+    if (p.status !== "pending") throw new ApiFailure("ALREADY_USED", "That transaction was already submitted.", 409);
+    if (Date.now() > p.expiresAt) {
+      p.status = "failed";
+      throw new ApiFailure("QUOTE_EXPIRED", "That took too long to sign, so it expired. Ask again.", 410);
+    }
+    const sig = String(input.signature ?? "");
+    if (!/^(0x)?[0-9a-fA-F]{128}$/.test(sig) || !verifySignature(s.address, p.hash, sig)) {
+      throw new ApiFailure("NOT_APPROVED", "The signature didn't match your wallet, so nothing was sent.", 403);
+    }
+    if (intent) await recheckSend(s, w, intent);
+    signed = attachSignature(p.xdr, s.address, sig);
+    p.signedXdr = signed.toXDR();
   }
 
   p.status = "submitted";
   let hash: string;
   try {
-    hash = await submit(attachSignature(p.xdr, s.address, sig));
+    hash = await submit(signed);
   } catch (err) {
+    if (err instanceof SubmitUnconfirmed) {
+      p.status = "unconfirmed";
+      throw new ApiFailure("BAD_REQUEST", "We couldn't confirm yet whether that went through. Check again in a moment. It won't be sent twice.", 502);
+    }
     p.status = "failed";
     throw err;
   }

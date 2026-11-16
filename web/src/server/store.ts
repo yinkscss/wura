@@ -39,7 +39,10 @@ export type PendingTx = {
   hash: string;
   intentId?: string;
   expiresAt: number;
-  status: "pending" | "submitted" | "failed";
+  /** The fully signed transaction, kept once submitted so an unconfirmed submit can be retried safely. */
+  signedXdr?: string;
+  /** "unconfirmed": submitted but Horizon never said whether it landed. Retrying the same signed XDR can't pay twice. */
+  status: "pending" | "submitted" | "unconfirmed" | "failed";
 };
 
 export type WalletState = {

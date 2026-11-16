@@ -80,7 +80,14 @@ export type AccountStatus = {
   /** NGNC (naira) balance in kobo, or null when there's no trustline. Always null off mainnet. */
   ngn: number | null;
   hasNgncTrustline: boolean;
+  /** SEP-29: the account asks that every payment to it carries a memo (exchanges do). */
+  memoRequired: boolean;
 };
+
+/** SEP-29: the account's data entry config.memo_required is "1" (base64 "MQ=="). */
+export function isMemoRequired(data: Record<string, string> | undefined): boolean {
+  return data?.["config.memo_required"] === "MQ==";
+}
 
 const isCredit = (b: { asset_type: string }) => b.asset_type === "credit_alphanum4" || b.asset_type === "credit_alphanum12";
 
@@ -98,9 +105,9 @@ export async function getAccountStatus(address: string): Promise<AccountStatus> 
       if (c.asset_code === config.usdc.code && c.asset_issuer === config.usdc.issuer) usdc = amountToCents(c.balance);
       if (naira && c.asset_code === naira.getCode() && c.asset_issuer === naira.getIssuer()) ngn = amountToCents(c.balance);
     }
-    return { address, exists: true, xlm, usdc, hasTrustline: usdc !== null, ngn, hasNgncTrustline: ngn !== null };
+    return { address, exists: true, xlm, usdc, hasTrustline: usdc !== null, ngn, hasNgncTrustline: ngn !== null, memoRequired: isMemoRequired((acct as unknown as { data_attr?: Record<string, string> }).data_attr) };
   } catch (err) {
-    if (isNotFound(err)) return { address, exists: false, xlm: "0", usdc: null, hasTrustline: false, ngn: null, hasNgncTrustline: false };
+    if (isNotFound(err)) return { address, exists: false, xlm: "0", usdc: null, hasTrustline: false, ngn: null, hasNgncTrustline: false, memoRequired: false };
     throw networkError(err);
   }
 }
@@ -283,15 +290,70 @@ export function attachSignature(xdr: string, address: string, signatureHex: stri
   return tx;
 }
 
+/** A submit whose result we couldn't learn (timeout, dropped connection). It may have landed. */
+export class SubmitUnconfirmed extends Error {
+  constructor(public hash: string) {
+    super("Couldn't confirm whether the transaction went through.");
+  }
+}
+
+export type HorizonLike = {
+  submitTransaction(tx: Transaction): Promise<{ hash: string }>;
+  transactions(): { transaction(hash: string): { call(): Promise<{ successful?: boolean }> } };
+};
+
+type ResultCodes = { transaction?: string; operations?: string[] };
+const resultCodes = (err: unknown): ResultCodes | undefined =>
+  (err as { response?: { data?: { extras?: { result_codes?: ResultCodes } } } })?.response?.data?.extras?.result_codes;
+
+/** What Horizon knows about a transaction hash: it landed, it failed on chain, or it isn't there. */
+export async function txOutcome(h: HorizonLike, hash: string): Promise<"success" | "failed" | "not_found"> {
+  try {
+    const t = await h.transactions().transaction(hash).call();
+    return t.successful === false ? "failed" : "success";
+  } catch (err) {
+    if (isNotFound(err)) return "not_found";
+    throw err;
+  }
+}
+
+/**
+ * Submits safely. Sending the same signed transaction again can't pay twice
+ * (same hash), so every doubtful case is settled by asking Horizon whether the
+ * hash landed:
+ *   - rejected with result codes: a real failure, except tx_bad_seq, which is also
+ *     what a resubmit of a transaction that already landed looks like;
+ *   - no result (timeout, network): wait and look the hash up; if it still isn't
+ *     there, throw SubmitUnconfirmed so the caller can retry the same signed XDR later.
+ */
+export async function submitWith(h: HorizonLike, tx: Transaction, opts: { pollMs?: number; polls?: number } = {}): Promise<string> {
+  const hash = tx.hash().toString("hex");
+  const pollMs = opts.pollMs ?? 2000;
+  const polls = opts.polls ?? 3;
+  try {
+    const res = await h.submitTransaction(tx);
+    return res.hash;
+  } catch (err) {
+    const codes = resultCodes(err);
+    if (codes) {
+      if (codes.transaction === "tx_bad_seq" && (await txOutcome(h, hash).catch(() => "not_found")) === "success") return hash;
+      throw submitError(err);
+    }
+    for (let i = 0; i < polls; i++) {
+      if (pollMs > 0) await new Promise((r) => setTimeout(r, pollMs));
+      const o = await txOutcome(h, hash).catch(() => "not_found" as const);
+      if (o === "success") return hash;
+      if (o === "failed") throw new ApiFailure("BAD_REQUEST", "Stellar rejected the transaction. Nothing was sent.", 422);
+    }
+    console.error("submit unconfirmed", hash, err);
+    throw new SubmitUnconfirmed(hash);
+  }
+}
+
 /** Submits and returns the transaction hash, or throws a plain-language error. */
 export async function submit(tx: Transaction): Promise<string> {
   assertMoneyOn();
-  try {
-    const res = await server().submitTransaction(tx);
-    return res.hash;
-  } catch (err) {
-    throw submitError(err);
-  }
+  return submitWith(server() as unknown as HorizonLike, tx);
 }
 
 function isNotFound(err: unknown) {
