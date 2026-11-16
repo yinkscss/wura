@@ -3,6 +3,9 @@ import { test } from "node:test";
 
 process.env.MONEY_MODE = "mainnet";
 process.env.APP_URL = "https://wura.example";
+process.env.NEXT_PUBLIC_PRIVY_APP_ID = "app-id";
+process.env.PRIVY_APP_SECRET = "privy-secret";
+process.env.DATABASE_URL = "postgres://nobody@localhost:1/none"; // never connected: these tests don't touch the database
 process.env.SESSION_SECRET = "y".repeat(40);
 delete process.env.VERCEL_ENV;
 delete process.env.TESTNET_SIGNER;

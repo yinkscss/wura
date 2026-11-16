@@ -11,7 +11,7 @@ import {
 } from "./network";
 
 const SECRET = "x".repeat(40);
-const mainnet = (extra: Record<string, string> = {}) => ({ MONEY_MODE: "mainnet", SESSION_SECRET: SECRET, APP_URL: "https://wura.example", ...extra });
+const mainnet = (extra: Record<string, string> = {}) => ({ MONEY_MODE: "mainnet", SESSION_SECRET: SECRET, APP_URL: "https://wura.example", NEXT_PUBLIC_PRIVY_APP_ID: "app-id", PRIVY_APP_SECRET: "privy-secret", DATABASE_URL: "postgres://x/y", ...extra });
 
 test("the mainnet USDC issuer is pinned to Circle's address", () => {
   assert.equal(CIRCLE_MAINNET_USDC_ISSUER, "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN");
@@ -85,7 +85,7 @@ test("mainnet refuses TESTNET_CONTACTS", () => {
 });
 
 test("every problem is reported at once", () => {
-  const p = bootProblems(mainnet({ VERCEL_ENV: "preview", TESTNET_SIGNER: "server-dev", AGENT_KEY_SECRET: SECRET }));
+  const p = bootProblems(mainnet({ VERCEL_ENV: "preview", TESTNET_SIGNER: "server-dev", AGENT_KEY_SECRET: "k".repeat(40) }));
   assert.equal(p.length, 3);
 });
 
@@ -108,4 +108,20 @@ test("mainnet needs the public https APP_URL, not localhost or a Vercel deployme
   assert.throws(() => assertBootSafe(mainnet({ APP_URL: "http://wura.example" })), /APP_URL/);
   assert.throws(() => assertBootSafe(mainnet({ APP_URL: "https://localhost:3000" })), /APP_URL/);
   assert.doesNotThrow(() => assertBootSafe(mainnet()));
+});
+
+test("mainnet refuses mock sign-in, a missing Privy secret and a missing database", () => {
+  for (const name of ["NEXT_PUBLIC_PRIVY_APP_ID", "PRIVY_APP_SECRET", "DATABASE_URL"]) {
+    const env: Record<string, string> = { ...mainnet() };
+    delete env[name];
+    assert.throws(() => assertBootSafe(env), new RegExp(name), name);
+  }
+});
+
+test("no two secrets may share a value (Production and Preview aside, which only Vercel can tell apart)", () => {
+  const S2 = "z".repeat(40);
+  assert.throws(() => assertBootSafe(mainnet({ CRON_SECRET: SECRET })), /CRON_SECRET must not be the same as SESSION_SECRET/);
+  assert.throws(() => assertBootSafe(mainnet({ PRIVY_APP_SECRET: SECRET })), /PRIVY_APP_SECRET must not be the same as SESSION_SECRET/);
+  assert.throws(() => assertBootSafe({ MONEY_MODE: "testnet", SESSION_SECRET: SECRET, RAMP_TOKEN_KEY: SECRET }), /RAMP_TOKEN_KEY/);
+  assert.doesNotThrow(() => assertBootSafe(mainnet({ CRON_SECRET: S2 })));
 });
