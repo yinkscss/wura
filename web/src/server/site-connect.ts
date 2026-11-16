@@ -443,6 +443,43 @@ async function readSite(url: string) {
   }
 }
 
+function summaryFor(price: number, host: string, fn: string, gets: string[]) {
+  return price > 0 ? `Pay ${usdc(price)} to ${host}${gets.length ? ` and receive ${gets.join(", ")}` : ""}` : `Call ${fn} on ${host} (no payment)`;
+}
+
+/**
+ * An approval link was opened after its preview expired (a person reads the reply, opens the
+ * link, signs in). Simulate the same call again and show the fresh figures, with a new clock.
+ * Limits and balance are checked again. Nothing is signed.
+ */
+export async function refreshLiveAction(s: Session, action: SiteAction): Promise<SiteAction> {
+  requireLive();
+  if (!action.live || !action.liveCall) throw new ApiFailure("QUOTE_EXPIRED", "That preview expired. Ask your assistant again and I'll simulate it fresh.", 410);
+  if (action.status !== "pending" && action.status !== "expired") return action;
+  const w = wallet(s.userId);
+  const fresh = await prepareCall(s.address, action.liveCall);
+  const price = fresh.spend.usdcCents;
+  checkLimits(w, "USDC", price);
+  const balance = price > 0 ? await usdcBalance(s) : 0;
+  if (price > balance) throw new ApiFailure("INSUFFICIENT_BALANCE", "You don't have enough USDC for that on testnet.", 403);
+  const limits = limitsFor(w);
+  const gets = describeGets(fresh);
+  Object.assign(action, {
+    call: { fn: action.liveCall.fn, args: fresh.args },
+    steps: action.steps.map((st, i) => (i === 3 ? { ...st, detail: `Succeeds · takes ${price > 0 ? `$${(price / 100).toFixed(2)} USDC` : "no money"} from you` } : st)),
+    summary: summaryFor(price, action.host, action.liveCall.fn, gets),
+    price,
+    total: price,
+    balanceBefore: balance,
+    dailyRemainingAfter: limits.remainingToday.USDC - price,
+    gets,
+    feeXlm: (fresh.feeStroops / 1e7).toFixed(5),
+    expiresAt: Date.now() + config.quoteTtlMs,
+    status: "pending",
+  });
+  return action;
+}
+
 function describeGets(p: Prepared) {
   return p.spend.incoming.map((t) => `${describeToken(t.token)} ${(Number(t.amount) / 1e7).toLocaleString("en-US", { maximumFractionDigits: 7 })}`);
 }
@@ -483,7 +520,7 @@ export async function prepareLiveCall(
       { label: "Read its interface", detail: `${input.fn}(${prepared.args.map((a) => `${a.name}: ${a.type}`).join(", ")})` },
       { label: "Simulated it", detail: `Succeeds · takes ${price > 0 ? `$${(price / 100).toFixed(2)} USDC` : "no money"} from you` },
     ],
-    summary: price > 0 ? `Pay ${usdc(price)} to ${host}${gets.length ? ` and receive ${gets.join(", ")}` : ""}` : `Call ${input.fn} on ${host} (no payment)`,
+    summary: summaryFor(price, host, input.fn, gets),
     asset: "USDC",
     price,
     fee: 0,

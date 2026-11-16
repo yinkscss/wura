@@ -371,7 +371,10 @@ export async function openApproval(
   if (siteAction) {
     if (siteAction.status === "pending" && Date.now() > siteAction.expiresAt) siteAction.status = "expired";
     // A site call can't be rebuilt here: the assistant has to read the site and simulate it again.
-    if (siteAction.status === "expired") throw new ApiFailure("QUOTE_EXPIRED", "That preview expired. Ask your assistant again and I'll simulate it fresh.", 410);
+    if (siteAction.status === "expired") {
+      // A real site call is simulated again by the approval route (refreshLiveAction); a mock one can't be rebuilt.
+      if (!siteAction.live || tooOld(siteAction)) throw new ApiFailure("QUOTE_EXPIRED", "That preview expired. Ask your assistant again and I'll simulate it fresh.", 410);
+    }
     return { kind: "site", action: siteAction };
   }
   const siteRequest = w.siteRequests.get(id);
