@@ -14,6 +14,7 @@ import {
   SwapIcon,
   WalletIcon,
 } from "../icons";
+import { ChatGPTLogo, ClaudeLogo, TelegramLogo, WhatsAppLogo } from "../brand-icons";
 import { Starfield } from "../starfield";
 import { ButtonLink, Wordmark, buttonClass, cx } from "../ui";
 import { HeroArc, HeroCardsMobile } from "./hero-arc";
@@ -257,11 +258,12 @@ const SAFETY = [
   { icon: ChatIcon, title: "Everything is logged", body: "Every swap, send and link goes into a log you can check." },
 ];
 
+// Same brand tiles as the in-app channels list (wallet-parts.tsx).
 const CHANNELS = [
-  { name: "Claude", how: "Chat plugin", tile: "bg-blue" },
-  { name: "ChatGPT", how: "Chat plugin", tile: "bg-pink" },
-  { name: "Telegram", how: "Bot", tile: "bg-blue-mid" },
-  { name: "WhatsApp", how: "Bot", tile: "bg-blue-night" },
+  { name: "Claude", how: "Chat plugin", tile: "bg-[#D97757]", Logo: ClaudeLogo },
+  { name: "ChatGPT", how: "Chat plugin", tile: "bg-[#10A37F]", Logo: ChatGPTLogo },
+  { name: "Telegram", how: "Bot", tile: "bg-[#26A5E4]", Logo: TelegramLogo },
+  { name: "WhatsApp", how: "Bot", tile: "bg-[#25D366]", Logo: WhatsAppLogo },
 ];
 
 export function Landing() {
@@ -385,7 +387,7 @@ export function Landing() {
             <Reveal key={c.name} delay={i * 0.07}>
               <motion.div whileHover={{ y: -6, rotate: i % 2 ? 1 : -1 }} className="flex flex-col gap-5 rounded-card bg-white p-6 shadow-card">
                 <span className={cx("grid size-12 place-items-center rounded-2xl text-white", c.tile)}>
-                  <ChatIcon size={20} />
+                  <c.Logo size={24} />
                 </span>
                 <div>
                   <div className="text-[20px] font-bold tracking-[-0.03em]">{c.name}</div>
