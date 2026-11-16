@@ -192,9 +192,12 @@ export function Chat() {
   async function approveSite(msgId: string, action: SiteAction) {
     patch(msgId, { state: "busy" });
     try {
-      const res = await api<{ activity: { txRef?: string }; mock: boolean }>("/api/sites/approve", { actionId: action.id, approve: true });
+      type Done = { activity: { txRef?: string; explorerUrl?: string }; mock: boolean };
+      // A real site call returns needs_signature: the wallet signs, then we submit.
+      const res = await completeSigning<Done>(await api<Done | NeedsSignature>("/api/sites/approve", { actionId: action.id, approve: true }));
       patch(msgId, { state: "done" });
-      say(`Signed. ${action.summary}. Reference ${res.activity.txRef}${res.mock ? " (mock — nothing was broadcast)" : ""}.`);
+      if (res.mock) say(`Signed. ${action.summary}. Reference ${res.activity.txRef} (mock — nothing was broadcast).`);
+      else say(`Done. ${action.summary}.`, undefined, res.activity.explorerUrl);
       void refresh();
     } catch (e) {
       const err = e as ClientApiError;

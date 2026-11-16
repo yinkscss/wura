@@ -138,9 +138,14 @@ export function SiteActionCard({
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         <Field label="Site" value={action.host} />
-        <Field label="Contract" value={short} mono badge={action.contract.verified ? "Verified" : undefined} />
+        <Field label="Contract" value={short} mono badge={action.contract.verified ? (action.live ? "On-chain" : "Verified") : undefined} />
         <Field label="Calls" value={`${action.call.fn}(…)`} mono />
-        <Field label="Fee (example)" value={`${usdcNumber(action.fee)} USDC`} />
+        {action.live ? (
+          <Field label="Network fee" value={`${action.feeXlm ?? "—"} XLM`} />
+        ) : (
+          <Field label="Fee (example)" value={`${usdcNumber(action.fee)} USDC`} />
+        )}
+        {action.gets && action.gets.length > 0 && <Field label="You’d receive" value={action.gets.join(", ")} />}
         <Field label="Your balance" value={`${usdcNumber(action.balanceBefore)} USDC`} />
         <Field label="Total debit" value={`${usdcNumber(action.total)} USDC`} />
       </div>
@@ -176,7 +181,7 @@ export function SiteActionCard({
       ) : live ? (
         <>
           <div className="flex items-center justify-between text-[12.5px] text-soft">
-            <span>Mock mode · example site</span>
+            <span>{action.live ? "Testnet · simulated on the network" : "Mock mode · example site"}</span>
             <span className="nums">Preview valid {left}s</span>
           </div>
           <div className="grid grid-cols-[1fr_1.3fr] gap-3">
@@ -191,7 +196,7 @@ export function SiteActionCard({
           {state === "done" ? (
             <>
               <span className="grid size-6 place-items-center rounded-full bg-pink text-white"><CheckIcon size={14} /></span>
-              Approved and signed (mock)
+              {action.live ? "Approved and signed" : "Approved and signed (mock)"}
             </>
           ) : (
             "Cancelled. Nothing was signed."

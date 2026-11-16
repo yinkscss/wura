@@ -34,7 +34,6 @@ export const config = {
   horizonUrl: NET.horizonUrl,
   sorobanRpcUrl: NET.sorobanRpcUrl,
   networkPassphrase: NET.passphrase,
-  networkPassphrase: NET.passphrase,
   /** Empty on mainnet: there is no faucet. */
   friendbotUrl: NET.friendbotUrl,
   /** "Stellar mainnet" or "Stellar testnet", for messages. */

@@ -214,6 +214,14 @@ export type SiteAction = {
   perPaymentCap: number;
   expiresAt: number;
   status: "pending" | "signed" | "cancelled" | "expired";
+  /** Real testnet call (read from the chain and simulated), not the mock example. */
+  live?: boolean;
+  /** What the user gets back in the same transaction, from the simulation. */
+  gets?: string[];
+  /** Network fee in XLM, shown beside the price. */
+  feeXlm?: string;
+  /** What to rebuild at approval time. Server-side input; the client never sends it. */
+  liveCall?: { url: string; contract: string; fn: string; args: Record<string, unknown> };
 };
 
 /** A card the chat can show under an agent message. */

@@ -1,5 +1,5 @@
 import "server-only";
-import type { NeedsSignature, SendIntent, WalletStatus } from "@/lib/types";
+import type { NeedsSignature, SendIntent, SiteAction, WalletStatus } from "@/lib/types";
 import { usdc } from "@/lib/format";
 import { config, serverDevSigning, moneyLive } from "./config";
 import { devKeypairFor } from "./dev-keys";
@@ -17,6 +17,7 @@ import {
   verifySignature,
   type BuiltTx,
 } from "./stellar";
+import { submitSoroban } from "./site-soroban";
 import { newId, wallet, type PendingTx, type WalletState } from "./store";
 
 /**
@@ -153,10 +154,18 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
     await recheckSend(s, w, intent);
   }
 
+  let action: SiteAction | undefined;
+  if (p.kind === "site") {
+    action = w.siteActions.get(p.intentId ?? "");
+    if (!action || action.status !== "pending") throw new ApiFailure("ALREADY_USED", "That site payment was already signed or cancelled.", 409);
+    checkLimits(w, "USDC", action.price);
+  }
+
   p.status = "submitted";
   let hash: string;
   try {
-    hash = await submit(attachSignature(p.xdr, s.address, sig));
+    const signed = attachSignature(p.xdr, s.address, sig);
+    hash = p.kind === "site" ? await submitSoroban(signed) : await submit(signed);
   } catch (err) {
     p.status = "failed";
     throw err;
@@ -164,8 +173,26 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
 
   if (p.kind === "trustline") return { status: "ready" as const, kind: p.kind, hash, wallet: await walletStatus(s) };
   if (p.kind === "agent-key-on" || p.kind === "agent-key-off") return { status: "ready" as const, kind: p.kind, hash };
+  if (action) {
+    const activity = finishSiteAction(w, action, hash);
+    return { status: "done" as const, kind: p.kind, hash, action, activity, mock: false };
+  }
   const activity = finishSend(w, intent!, hash);
   return { status: "done" as const, kind: p.kind, hash, intent: intent!, activity, mock: false };
+}
+
+/** A real site call went through. Counts the USDC it took against today's cap and logs it. */
+export function finishSiteAction(w: WalletState, action: SiteAction, hash: string) {
+  action.status = "signed";
+  w.spentToday.USDC += action.price;
+  return log(w, {
+    kind: "site",
+    detail: `${action.siteName} · ${action.call.fn}`,
+    amount: usdc(action.price),
+    status: "done",
+    txRef: hash,
+    explorerUrl: config.explorerTx(hash),
+  });
 }
 
 export function refuseInTestnet(what: string) {
