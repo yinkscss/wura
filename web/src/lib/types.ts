@@ -90,7 +90,11 @@ export type SendIntent = {
    * The partner says where to pay; it is read again before approval and before
    * submit (server/cashout.ts). Never approved from a chat app or an approval link.
    */
-  cashOut?: { id: string; from: Currency };
+  /**
+   * A cash-out's payment. `fee` and `receive` are what the partner said, when
+   * it said (shown to the user, and compared again before sending).
+   */
+  cashOut?: { id: string; from: Currency; fee?: number | null; receive?: { amount: number; currency: Currency } | null };
 };
 
 /** One payment seen for a link. Only "counted" ones add to what's paid. */
@@ -228,7 +232,9 @@ export type ApiErrorCode =
   /** A cash-out the partner isn't ready to be paid for yet. */
   | "NOT_READY"
   /** The partner's payment details changed after the user saw or approved them. */
-  | "CHANGED";
+  | "CHANGED"
+  /** The partner sign-in expired (or is about to): sign in again, then carry on. */
+  | "PARTNER_SIGNIN";
 
 export type ApiError = { error: { code: ApiErrorCode; message: string } };
 

@@ -35,7 +35,7 @@ function row(over: Partial<TransferRow> = {}): TransferRow {
 }
 
 function status(over: Partial<TransferStatus> = {}): TransferStatus {
-  return { id: "a1", kind: "deposit", state: "done", anchorStatus: "completed", amountIn: 20_000_00, amountOut: 19_800_00, fee: 200_00, stellarTxId: "abc123", payTo: null, ...over };
+  return { id: "a1", kind: "deposit", state: "done", anchorStatus: "completed", amountIn: 20_000_00, amountOut: 19_800_00, fee: 200_00, feeAsset: null, amountOutAsset: null, stellarTxId: "abc123", payTo: null, ...over };
 }
 
 /** An in-memory stand-in for the two tables, with the same once-only rules as the SQL. */

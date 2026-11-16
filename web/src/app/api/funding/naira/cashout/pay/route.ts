@@ -1,4 +1,4 @@
-import { prepareCashOutPayment } from "@/server/cashout";
+import { orPartnerSignIn, prepareCashOutPayment } from "@/server/cashout";
 import { receiveChoice } from "@/server/ramp";
 import { partnerToken } from "@/server/ramp/cookie";
 import { authed, jsonBody } from "@/server/route";
@@ -9,5 +9,6 @@ import { authed, jsonBody } from "@/server/route";
 // is signed. Lives under /api/funding so the partner sign-in cookie arrives.
 export const POST = authed(async (s, req) => {
   const b = await jsonBody(req);
-  return prepareCashOutPayment(s, { id: String(b.id ?? ""), from: receiveChoice(b.from) }, partnerToken);
+  // A lapsed partner sign-in answers "needs_partner_signin"; the screen signs it and asks again.
+  return orPartnerSignIn(() => prepareCashOutPayment(s, { id: String(b.id ?? ""), from: receiveChoice(b.from) }, partnerToken));
 });

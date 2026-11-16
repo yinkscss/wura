@@ -10,9 +10,12 @@
  */
 
 export class Sep24Error extends Error {
-  constructor(message: string) {
+  /** The anchor's HTTP status, when it answered with an error. */
+  status?: number;
+  constructor(message: string, status?: number) {
     super(message);
     this.name = "Sep24Error";
+    this.status = status;
   }
 }
 
@@ -59,7 +62,7 @@ async function getJson(f: Fetch, url: string | URL, init: RequestInit, timeoutMs
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
   if (!res.ok) {
     const reason = body && typeof body.error === "string" ? `: ${body.error.slice(0, 200)}` : "";
-    throw new Sep24Error(`The anchor answered ${res.status} (${what})${reason}`);
+    throw new Sep24Error(`The anchor answered ${res.status} (${what})${reason}`, res.status);
   }
   if (!body) throw new Sep24Error(`The anchor sent no data (${what}).`);
   return body;
@@ -177,6 +180,12 @@ export type TransferStatus = {
   amountIn: number | null;
   amountOut: number | null;
   fee: number | null;
+  /**
+   * What the fee and the paid-out amount are in, as the anchor says it (SEP-38
+   * form: "stellar:CODE:ISSUER" or "iso4217:NGN"). null when it doesn't say.
+   */
+  feeAsset: string | null;
+  amountOutAsset: string | null;
   /** Stellar transaction hash once the anchor has paid or been paid. */
   stellarTxId: string | null;
   /**
@@ -224,6 +233,8 @@ export async function getTransfer(
     amountIn: toMinor(t.amount_in),
     amountOut: toMinor(t.amount_out),
     fee: toMinor(t.amount_fee),
+    feeAsset: typeof t.amount_fee_asset === "string" && t.amount_fee_asset ? t.amount_fee_asset : null,
+    amountOutAsset: typeof t.amount_out_asset === "string" && t.amount_out_asset ? t.amount_out_asset : null,
     stellarTxId: typeof t.stellar_transaction_id === "string" ? t.stellar_transaction_id : null,
     payTo,
   };

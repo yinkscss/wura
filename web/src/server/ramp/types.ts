@@ -126,7 +126,10 @@ export type CashOutStatus = {
   currency: RampCurrency;
   /** What the wallet has to send, once the partner says. Minor units of `currency`. */
   send: number | null;
+  /** The partner's fee, minor units of `currency`. null when it doesn't say, or charges it in something else. */
   fee: number | null;
+  /** What reaches the bank account, in naira (kobo), once the partner says. */
+  receive: { amount: number; currency: "NGN" } | null;
   /**
    * True once the partner is waiting for the wallet's payment. The payment is
    * a money move: it needs the user's approval and goes through the limit
@@ -152,6 +155,10 @@ export type CashOutPayment = {
   destination: string;
   memo: string;
   memoType: "text" | "id" | "hash";
+  /** The partner's fee (SEP-24 amount_fee), minor units of `currency`, when it says. Shown to the user. */
+  fee?: number | null;
+  /** What reaches the bank (SEP-24 amount_out), when the partner says. Naira for both services. */
+  receive?: { amount: number; currency: RampCurrency } | null;
 };
 
 /** What a cash-out would do. Shown to the user before anything is approved or signed. */
@@ -191,7 +198,13 @@ export interface RampProvider {
   startCashOut?(s: Session, input: { amount: number; from: RampCurrency; partnerToken?: string }): Promise<PartnerCashOut | PartnerSignIn>;
   cashOutStatus?(s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }): Promise<CashOutStatus | PartnerSignIn>;
   /** For the money code only. null until the partner is ready to be paid. Never signs. */
-  cashOutPayment?(s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }): Promise<CashOutPayment | null>;
+  /**
+   * The exact payment that finishes a cash-out, or null while the partner
+   * isn't ready. PartnerSignIn when the partner sign-in is missing, rejected,
+   * or has less than the smaller of 10 minutes and half its lifetime left (so it
+   * can't lapse between approve and submit, and a short sign-in can't loop).
+   */
+  cashOutPayment?(s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }): Promise<CashOutPayment | PartnerSignIn | null>;
   /** Mock only. Never signs. See the boundaries above. */
   previewCashOut(s: Session, input: { amount: number }): Promise<CashOutPreview>;
   /**

@@ -23,8 +23,11 @@ const { submitSigned } = await import("./testnet");
 const C = await import("./cashout");
 type Deps = import("./cashout").CashOutDeps;
 type Payment = import("./ramp/types").CashOutPayment;
+type SignIn = import("./ramp/types").PartnerSignIn;
+const signIn: SignIn = { status: "needs_partner_signin", receive: "NGN", hash: "00", address: "G", challenge: "c", expiresAt: 0 };
 
-const user = Keypair.random().publicKey();
+const userKey = Keypair.random();
+const user = userKey.publicKey();
 const partner = Keypair.random().publicKey();
 const ngnc = assetFor("NGN")!;
 let n = 0;
@@ -47,7 +50,7 @@ const pay = (o: Partial<Payment> = {}): Payment => ({
 
 /** A partner that answers with `answer()` each time it is read, and a cash-out recorded for this user. */
 /** `held` stands in for ramp_transfers.stellar_tx_id: the payment that claimed the cash-out. */
-function deps(s: { userId: string; address: string }, answer: () => Payment | null, over: Partial<Deps> = {}): Deps & { reads: number; held: string | null } {
+function deps(s: { userId: string; address: string }, answer: () => Payment | SignIn | null, over: Partial<Deps> = {}): Deps & { reads: number; held: string | null } {
   const d = {
     reads: 0,
     held: null as string | null,
@@ -81,7 +84,7 @@ test("a ready cash-out becomes a payment preview to the partner, with its memo",
   assert.equal(i.amount, AMOUNT);
   assert.equal(i.to.address, partner);
   assert.deepEqual(i.memo, { type: "id", value: "12345" });
-  assert.deepEqual(i.cashOut, { id: "co-1", from: "NGN" });
+  assert.deepEqual(i.cashOut, { id: "co-1", from: "NGN", fee: null, receive: null });
   assert.equal(i.status, "pending");
 });
 
@@ -257,4 +260,68 @@ test("a hash memo builds into the transaction as the partner's 32 bytes", async 
   const tx = TransactionBuilder.fromXDR(built.xdr, "Public Global Stellar Network ; September 2015") as import("@stellar/stellar-sdk").Transaction;
   assert.equal(tx.memo.type, "hash");
   assert.deepEqual(Buffer.from(tx.memo.value as Buffer), raw);
+});
+
+test("an expired partner sign-in asks for a new one, at every step, and cancels nothing", async () => {
+  const s = session();
+  let answer: Payment | SignIn = signIn;
+  const d = deps(s, () => answer);
+  const w = wallet(s.userId);
+  assert.deepEqual(await C.orPartnerSignIn(() => C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d)), signIn);
+  answer = pay();
+  const i = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
+  answer = signIn;
+  assert.deepEqual(await C.orPartnerSignIn(() => C.approveCashOutPayment(s, { intentId: i.id, approve: true }, noToken, d)), signIn);
+  assert.equal(w.sends.get(i.id)!.status, "pending");
+  const { check } = C.cashOutSubmitCheck(s, noToken, d);
+  await assert.rejects(check(w, i, "hash-a"), (e: unknown) => e instanceof C.PartnerSignInNeeded && e.code === "PARTNER_SIGNIN");
+  assert.equal(w.cashOutPaid?.["co-1"], undefined);
+  assert.equal(d.held, null);
+  assert.equal(w.sends.get(i.id)!.status, "pending");
+  answer = pay(); // signed in again: the same signed payment goes ahead
+  await check(w, i, "hash-a");
+  assert.equal(d.held, "hash-a");
+});
+
+test("the partner's fee and what reaches the bank are shown, must add up, and can't change after the preview", async () => {
+  const s = session();
+  let answer = pay({ fee: 200_00, receive: { amount: AMOUNT - 200_00, currency: "NGN" } });
+  const d = deps(s, () => answer);
+  const i = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
+  assert.deepEqual(i.cashOut, { id: "co-1", from: "NGN", fee: 200_00, receive: { amount: AMOUNT - 200_00, currency: "NGN" } });
+  answer = pay({ fee: 300_00, receive: { amount: AMOUNT - 300_00, currency: "NGN" } });
+  await assert.rejects(C.approveCashOutPayment(s, { intentId: i.id, approve: true }, noToken, d), refused("CHANGED"));
+  answer = pay({ fee: 200_00, receive: { amount: AMOUNT, currency: "NGN" } });
+  await assert.rejects(C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d), /doesn't match/);
+  answer = pay({ fee: AMOUNT });
+  await assert.rejects(C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d), /doesn't match/);
+  // A dollar cash-out pays naira to the bank, so the two aren't compared.
+  const usdc = assetFor("USDC")!;
+  answer = pay({ currency: "USDC", asset: { code: usdc.getCode(), issuer: usdc.getIssuer() }, amount: 10_00, fee: 0, receive: { amount: 14_000_00, currency: "NGN" } });
+  const t = await deps(s, () => null).transfer({ provider: "link", service: "NGN", anchorTxId: "co-1" });
+  const du = deps(s, () => answer, {
+    transfer: async () => ({ ...t!, service: "USDC", amount: 10_00 }),
+    balance: async () => 100_00,
+    account: async (address: string) => ({ address, exists: true, xlm: "5", usdc: 0, hasTrustline: true, ngn: null, hasNgncTrustline: false, memoRequired: false }),
+  });
+  const u = await C.prepareCashOutPayment(s, { id: "co-1", from: "USDC" }, noToken, du);
+  assert.deepEqual(u.cashOut?.receive, { amount: 14_000_00, currency: "NGN" });
+});
+
+test("submitSigned: a lapsed sign-in stops a correctly signed payment before anything is claimed or sent", async () => {
+  const s = session();
+  let answer: Payment | SignIn = pay();
+  const d = deps(s, () => answer);
+  const i = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
+  const r = await C.approveCashOutPayment(s, { intentId: i.id, approve: true }, noToken, d);
+  const p = wallet(s.userId).pendingTx.get(r.txId)!;
+  const signature = userKey.sign(Buffer.from(p.hash, "hex")).toString("hex");
+  answer = signIn;
+  const out = await C.orPartnerSignIn(() => submitSigned(s, { txId: r.txId, signature }, { cashOut: C.cashOutSubmitCheck(s, noToken, d) }));
+  assert.deepEqual(out, signIn);
+  // So the same signature can be posted again after the new sign-in (that retry reaches Horizon, so it isn't run here).
+  assert.equal(p.status, "pending");
+  assert.equal(p.signedXdr, undefined);
+  assert.equal(d.held, null);
+  assert.equal(wallet(s.userId).sends.get(i.id)!.status, "pending");
 });
