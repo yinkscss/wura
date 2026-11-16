@@ -22,6 +22,7 @@ import {
 } from "./stellar";
 import { TransactionBuilder, type Transaction } from "@stellar/stellar-sdk";
 import { alert } from "./alerts";
+import type { CashOutCheck } from "./cashout";
 import { submitSoroban } from "./site-soroban";
 import { finishSwap, recheckSwap } from "./swaps";
 import { assertInvited, prepareSponsoredSetup, sponsorshipConfigured } from "./treasury";
@@ -201,7 +202,7 @@ export async function startTestnetSend(s: Session, intent: SendIntent) {
 export async function submitSigned(
   s: Session,
   input: { txId: string; signature: string },
-  opts: { cashOut?: (w: WalletState, intent: SendIntent, txHash: string) => Promise<void> } = {},
+  opts: { cashOut?: CashOutCheck } = {},
 ) {
   const w = wallet(s.userId);
   const p = w.pendingTx.get(String(input.txId));
@@ -234,7 +235,7 @@ export async function submitSigned(
     if (!/^(0x)?[0-9a-fA-F]{128}$/.test(sig) || !verifySignature(s.address, p.hash, sig)) {
       throw new ApiFailure("NOT_APPROVED", "The signature didn't match your wallet, so nothing was sent.", 403);
     }
-    if (intent?.cashOut) await opts.cashOut!(w, intent, p.hash); // the partner is read again; claims the cash-out
+    if (intent?.cashOut) await opts.cashOut!.check(w, intent, p.hash); // the partner is read again; claims the cash-out
     else if (intent) await recheckSend(s, w, intent);
     if (quote) await recheckSwap(s, w, quote); // the price itself is held by the transaction's minimum
     signed = attachSignature(p.xdr, s.address, sig);
@@ -260,7 +261,11 @@ export async function submitSigned(
     }
     p.status = "failed";
     // Rejected for certain, so nothing left the wallet: the cash-out can be paid again.
-    if (intent?.cashOut && w.cashOutPaid?.[intent.cashOut.id] === p.hash) delete w.cashOutPaid[intent.cashOut.id];
+    if (intent?.cashOut) {
+      await opts.cashOut!.release(w, intent, p.hash).catch((e) => {
+        void alert("cashout_release_failed", `couldn't release the cash-out claim for tx ${p.hash.slice(0, 12)}…: ${e instanceof Error ? e.message.slice(0, 120) : "unknown"}`, p.hash);
+      });
+    }
     void alert("submit_failed", `a ${p.kind} (tx ${p.hash.slice(0, 12)}…) was rejected: ${err instanceof Error ? err.message.slice(0, 160) : "unknown"}`, p.hash);
     throw err;
   }

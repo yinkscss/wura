@@ -26,7 +26,7 @@ An alert says `stuck_transfer` or `submit_unconfirmed`, with the first 12 charac
 ## 3. Cash in and cash out
 
 - A cash-out's payment shows in the log as "Sent to the partner for your cash-out". Reconcile adds "Cash-out paid to your bank account" when the partner pays the bank.
-- `cashOutPaid` in the wallet state blocks a second payment for the same cash-out. An unconfirmed submit is retried with the same signed transaction; it is never approved again.
+- The claim on the cash-out's `ramp_transfers` row (`stellar_tx_id`, written before submit) blocks a second payment for the same cash-out, even after a timeout mid-submit. If a cash-out is stuck claimed by a payment that never landed, the user starts a new cash-out. An unconfirmed submit is retried with the same signed transaction; it is never approved again.
 
 A partner transfer older than about a day cannot be re-checked automatically (the partner sign-in lasts about a day). Reconcile flags it for a person. Ask the user for the partner reference, then ask LINK.
 

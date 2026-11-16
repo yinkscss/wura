@@ -105,7 +105,7 @@ Built (code, not yet tried with real money):
   - the amount is no more than the cash-out was started with (`ramp_transfers.amount`);
   - `checkLimits` and the balance cover the partner's amount;
   - a hash memo decodes from base64 to exactly 32 bytes;
-  - each cash-out is paid at most once (`cashOutPaid`, claimed under the wallet lock before submit).
+  - each cash-out is paid at most once: claimed on its `ramp_transfers` row (`claimCashOutPayment`, saved at once, so it survives a timeout mid-submit) and in `cashOutPaid`, before submit; given back only after a definite rejection.
 - **Where it's approved.** A cash-out can't be approved from chat, from an approval link or through `/api/tx/submit`. Its routes sit under `/api/funding/naira/cashout/`, so the partner cookie arrives.
 - **The log.** The payment shows as "Sent to the partner for your cash-out"; reconcile later adds "Cash-out paid to your bank account".
 - **Recent transfers.** The cash-out screen lists the stored top-ups and cash-outs, and a cash-out can be picked up again after a restart.

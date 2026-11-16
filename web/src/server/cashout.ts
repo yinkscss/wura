@@ -5,7 +5,7 @@ import { config, onMainnet } from "./config";
 import { ApiFailure } from "./errors";
 import { checkLimits, limitsFor } from "./money";
 import { cashOutPayment, ramp } from "./ramp";
-import { findTransfer, type TransferRow } from "./ramp/records";
+import { claimCashOutPayment, findTransfer, releaseCashOutPayment, type TransferRow } from "./ramp/records";
 import type { CashOutPayment, RampCurrency } from "./ramp/types";
 import type { Session } from "./session";
 import { assetFor, getAccountStatus, type AccountStatus, type BuiltTx } from "./stellar";
@@ -27,8 +27,10 @@ import { assertInvited } from "./treasury";
  *   - the asset must be the one Wura pins for this currency on mainnet;
  *   - the amount can't be more than the user started the cash-out with
  *     (ramp_transfers.amount), and the caps and the balance apply to it;
- *   - each cash-out is paid at most once (WalletState.cashOutPaid, written
- *     under the wallet lock before submit).
+ *   - each cash-out is paid at most once: before submit, the payment's hash
+ *     is claimed on the cash-out's ramp_transfers row (saved at once, so it
+ *     survives a timeout mid-submit) and in WalletState.cashOutPaid; it is
+ *     given back only when the network rejects the payment for certain.
  *
  * The payment itself is an ordinary send intent (tagged `cashOut`), signed by
  * the user's own wallet and logged like a send. Chat apps and approval links
@@ -44,7 +46,13 @@ export type CashOutDeps = {
   balance: (s: Session, asset: Currency) => Promise<number>;
   account: (address: string) => Promise<AccountStatus>;
   build: (s: Session, intent: SendIntent) => Promise<BuiltTx>;
+  /** Claims the cash-out for one payment; true when this payment owns it (or already did). */
+  claim: (key: TransferKey, txHash: string) => Promise<boolean>;
+  release: (key: TransferKey, txHash: string) => Promise<void>;
 };
+
+type TransferKey = { provider: string; service: RampCurrency; anchorTxId: string };
+const keyFor = (c: NonNullable<SendIntent["cashOut"]>): TransferKey => ({ provider: ramp().id, service: c.from, anchorTxId: c.id });
 
 const live: CashOutDeps = {
   payment: cashOutPayment,
@@ -52,6 +60,8 @@ const live: CashOutDeps = {
   balance: assetBalance,
   account: getAccountStatus,
   build: buildIntentPayment,
+  claim: claimCashOutPayment,
+  release: releaseCashOutPayment,
 };
 
 /** The browser's partner sign-in for a currency (a cookie), when there is one. */
@@ -104,7 +114,7 @@ export function samePayment(intent: SendIntent, p: CashOutPayment, memo: Payment
 }
 
 /** Reads the partner's payment details for this cash-out and checks them against what Wura knows. */
-async function readPayment(s: Session, id: string, from: RampCurrency, partnerToken: string | undefined, deps: CashOutDeps) {
+async function readPayment(s: Session, id: string, from: RampCurrency, partnerToken: string | undefined, deps: CashOutDeps, exceptHash?: string) {
   if (!onMainnet() || !ramp().live) {
     throw refuse("BAD_REQUEST", "Cash-outs to a bank account need the live partner on mainnet.");
   }
@@ -122,6 +132,8 @@ async function readPayment(s: Session, id: string, from: RampCurrency, partnerTo
   if (!row || row.userId !== s.userId || row.address !== s.address || row.kind !== "cashout") {
     throw refuse("INTENT_NOT_FOUND", "We have no record of starting this cash-out from your wallet, so nothing was sent.", 404);
   }
+  // A payment already claimed it (or the partner saw one arrive): only that same payment may go on.
+  if (row.stellarTxId && row.stellarTxId !== exceptHash) throw paidOnce();
   if (!Number.isInteger(p.amount) || p.amount <= 0 || p.amount > row.amount) {
     throw refuse(
       "BAD_REQUEST",
@@ -145,11 +157,11 @@ async function recheck(s: Session, w: WalletState, p: CashOutPayment, memo: Paym
   return bal;
 }
 
+const paidOnce = () => refuse("ALREADY_USED", "This cash-out has already been paid from your wallet. Nothing more was sent.");
+
 function alreadyPaid(w: WalletState, id: string, exceptHash?: string) {
   const paid = w.cashOutPaid?.[id];
-  if (paid && paid !== exceptHash) {
-    throw refuse("ALREADY_USED", "This cash-out has already been paid from your wallet. Nothing more was sent.");
-  }
+  if (paid && paid !== exceptHash) throw paidOnce();
 }
 
 /** Step 1: the payment preview, once the partner says it is ready. Nothing is signed here. */
@@ -218,24 +230,33 @@ export async function approveCashOutPayment(
 }
 
 /**
- * Step 3, for submitSigned (server/testnet.ts): runs under the wallet lock
- * after the signature is checked and before the payment is submitted. Reads
- * the partner one last time and claims the cash-out for this transaction.
+ * Step 3, for submitSigned (server/testnet.ts). `check` runs under the wallet
+ * lock after the signature is checked and before the payment is submitted:
+ * it reads the partner one last time and claims the cash-out for this
+ * transaction. `release` gives the claim back after a definite rejection.
  */
 export function cashOutSubmitCheck(s: Session, tokenFor: TokenFor, deps: CashOutDeps = live) {
-  return async (w: WalletState, intent: SendIntent, txHash: string) => {
+  const check = async (w: WalletState, intent: SendIntent, txHash: string) => {
     // A preview that was replaced, cancelled or refused can't be paid, even with a signature for it.
     if (intent.status !== "pending") throw refuse("ALREADY_USED", "That cash-out payment was replaced or cancelled, so nothing was sent. Check the cash-out again.");
     const { id, from } = intent.cashOut!;
     alreadyPaid(w, id, txHash);
-    const { p, memo } = await readPayment(s, id, from, await tokenFor(from), deps);
+    const { p, memo } = await readPayment(s, id, from, await tokenFor(from), deps, txHash);
     if (!samePayment(intent, p, memo)) {
       intent.status = "cancelled";
       throw refuse("CHANGED", "The partner changed the payment details since you approved, so nothing was sent. Check the cash-out again.");
     }
     await recheck(s, w, p, memo, deps);
+    // Saved on its own connection the moment it returns, so a timeout mid-submit can't lose it.
+    if (!(await deps.claim(keyFor(intent.cashOut!), txHash))) throw paidOnce();
     (w.cashOutPaid ??= {})[id] = txHash;
   };
+  const release = async (w: WalletState, intent: SendIntent, txHash: string) => {
+    const { id } = intent.cashOut!;
+    if (w.cashOutPaid?.[id] === txHash) delete w.cashOutPaid[id];
+    await deps.release(keyFor(intent.cashOut!), txHash);
+  };
+  return { check, release };
 }
 
 export type CashOutCheck = ReturnType<typeof cashOutSubmitCheck>;

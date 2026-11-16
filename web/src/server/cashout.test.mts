@@ -46,23 +46,33 @@ const pay = (o: Partial<Payment> = {}): Payment => ({
 });
 
 /** A partner that answers with `answer()` each time it is read, and a cash-out recorded for this user. */
-function deps(s: { userId: string; address: string }, answer: () => Payment | null, over: Partial<Deps> = {}): Deps & { reads: number } {
+/** `held` stands in for ramp_transfers.stellar_tx_id: the payment that claimed the cash-out. */
+function deps(s: { userId: string; address: string }, answer: () => Payment | null, over: Partial<Deps> = {}): Deps & { reads: number; held: string | null } {
   const d = {
     reads: 0,
+    held: null as string | null,
     payment: async () => {
       d.reads++;
       return answer();
     },
-    transfer: async (k: { anchorTxId: string }) =>
+    transfer: async (k: { anchorTxId: string }): Promise<import("./ramp/records").TransferRow | null> =>
       k.anchorTxId === "co-1"
-        ? ({ id: "row", userId: s.userId, address: s.address, provider: "link", service: "NGN", kind: "cashout", anchorTxId: "co-1", amount: AMOUNT, state: "waiting_for_you", anchorStatus: "pending_user_transfer_start", amountIn: null, amountOut: null, fee: null, stellarTxId: null, loggedAt: null, flaggedAt: null, createdAt: Date.now() } as const)
+        ? ({ id: "row", userId: s.userId, address: s.address, provider: "link", service: "NGN", kind: "cashout", anchorTxId: "co-1", amount: AMOUNT, state: "waiting_for_you", anchorStatus: "pending_user_transfer_start", amountIn: null, amountOut: null, fee: null, stellarTxId: d.held, loggedAt: null, flaggedAt: null, createdAt: Date.now() } as const)
         : null,
     balance: async () => 50_000_00,
     account: async (address: string) => ({ address, exists: true, xlm: "5", usdc: null, hasTrustline: false, ngn: 0, hasNgncTrustline: true, memoRequired: false }),
     build: async () => ({ xdr: "AAAA", hash: "ab".repeat(32) }),
+    claim: async (k: { anchorTxId: string }, hash: string) => {
+      if (k.anchorTxId !== "co-1" || (d.held && d.held !== hash)) return false;
+      d.held = hash;
+      return true;
+    },
+    release: async (_k: unknown, hash: string) => {
+      if (d.held === hash) d.held = null;
+    },
     ...over,
   };
-  return d as Deps & { reads: number };
+  return d as Deps & { reads: number; held: string | null };
 }
 
 test("a ready cash-out becomes a payment preview to the partner, with its memo", async () => {
@@ -150,9 +160,10 @@ test("before submit: the cash-out is claimed once; a second payment for it is re
   const d = deps(s, () => pay());
   const w = wallet(s.userId);
   const a = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
-  const check = C.cashOutSubmitCheck(s, noToken, d);
+  const { check } = C.cashOutSubmitCheck(s, noToken, d);
   await check(w, a, "hash-a");
   assert.equal(w.cashOutPaid!["co-1"], "hash-a");
+  assert.equal(d.held, "hash-a");
   await check(w, a, "hash-a"); // the same transaction again (a retry) is fine
   await assert.rejects(check(w, a, "hash-b"), refused("ALREADY_USED"));
   await assert.rejects(C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d), refused("ALREADY_USED"));
@@ -165,8 +176,9 @@ test("before submit: a changed amount stops it, and nothing is claimed", async (
   const w = wallet(s.userId);
   const i = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
   answer = pay({ amount: AMOUNT - 1 });
-  await assert.rejects(C.cashOutSubmitCheck(s, noToken, d)(w, i, "hash-a"), refused("CHANGED"));
+  await assert.rejects(C.cashOutSubmitCheck(s, noToken, d).check(w, i, "hash-a"), refused("CHANGED"));
   assert.equal(w.cashOutPaid?.["co-1"], undefined);
+  assert.equal(d.held, null);
 });
 
 test("a cash-out can't be approved by createSend (chat or web) or an approval link, or submitted through /api/tx/submit", async () => {
@@ -187,8 +199,51 @@ test("before submit: a preview that was replaced can't be paid with its old sign
   const first = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
   await C.approveCashOutPayment(s, { intentId: first.id, approve: true }, noToken, d);
   await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d); // a fresh look replaces it
-  await assert.rejects(C.cashOutSubmitCheck(s, noToken, d)(w, first, "hash-a"), refused("ALREADY_USED"));
+  await assert.rejects(C.cashOutSubmitCheck(s, noToken, d).check(w, first, "hash-a"), refused("ALREADY_USED"));
   assert.equal(w.cashOutPaid?.["co-1"], undefined);
+});
+
+test("a claim saved before a timeout still holds when the wallet's own record of it was lost", async () => {
+  const s = session();
+  const d = deps(s, () => pay());
+  d.held = "hash-x"; // the server died mid-submit: the row kept the claim, the wallet state didn't
+  await assert.rejects(C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d), refused("ALREADY_USED"));
+  // A preview made before the claim can't be paid by a different transaction, but the claiming one can retry.
+  const d2 = deps(s, () => pay());
+  const w = wallet(s.userId);
+  const i = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d2);
+  d2.held = "hash-x";
+  const { check } = C.cashOutSubmitCheck(s, noToken, d2);
+  await assert.rejects(check(w, i, "hash-a"), refused("ALREADY_USED"));
+  assert.equal(w.cashOutPaid?.["co-1"], undefined);
+  await check(w, i, "hash-x");
+  assert.equal(w.cashOutPaid!["co-1"], "hash-x");
+});
+
+test("a claim lost to another payment at the last moment stops the submit", async () => {
+  const s = session();
+  const d = deps(s, () => pay(), { claim: async () => false });
+  const w = wallet(s.userId);
+  const i = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
+  await assert.rejects(C.cashOutSubmitCheck(s, noToken, d).check(w, i, "hash-a"), refused("ALREADY_USED"));
+  assert.equal(w.cashOutPaid?.["co-1"], undefined);
+});
+
+test("after a definite rejection the claim is given back, and a new payment can pay the cash-out", async () => {
+  const s = session();
+  const d = deps(s, () => pay());
+  const w = wallet(s.userId);
+  const hooks = C.cashOutSubmitCheck(s, noToken, d);
+  const a = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
+  await hooks.check(w, a, "hash-a");
+  await hooks.release(w, a, "hash-b"); // only the holder can release
+  assert.equal(d.held, "hash-a");
+  await hooks.release(w, a, "hash-a");
+  assert.equal(d.held, null);
+  assert.equal(w.cashOutPaid?.["co-1"], undefined);
+  const b = await C.prepareCashOutPayment(s, { id: "co-1", from: "NGN" }, noToken, d);
+  await hooks.check(w, b, "hash-b");
+  assert.equal(d.held, "hash-b");
 });
 
 test("a hash memo builds into the transaction as the partner's 32 bytes", async () => {
