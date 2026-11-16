@@ -2,7 +2,7 @@
 
 Wura should be reachable on WhatsApp, as the same assistant as on the web: the same commands, the same quote before anything moves, the same approval, limits and log. This note explains what we are asking the implementer to build, what we need to bring to set it up, which provider to use, what it costs, and the policy risk to check before production.
 
-Nothing here is built yet. The web app shows WhatsApp only as a “connected app” label. Research was done in November 2026 from Meta's docs and policy pages, provider pricing pages and Nigerian setup guides (sources at the end). Several of those are third-party write-ups; check Meta's own pages before relying on a figure.
+The adapter is implemented under `web/src/server/whatsapp/` (webhook, link API, Channels card). It stays off until the WhatsApp env vars are set. Research was done in November 2026 from Meta's docs and policy pages, provider pricing pages and Nigerian setup guides (sources at the end). Several of those are third-party write-ups; check Meta's own pages before relying on a figure.
 
 ## Summary
 
@@ -148,7 +148,7 @@ For the buildathon, the free test number and the free 1,000 service messages mea
 
 ## How it plugs into Wura's code
 
-This is a design, not something built yet. The goal is to reuse the existing agent and money API unchanged, so WhatsApp gets exactly the same checks as the web. Share the channel plumbing with the [Telegram bot plan](telegram-bot-plan.md): one channel link table keyed by channel and external id, one dedupe table, and one card renderer core with a thin layer per channel for each format. Otherwise we end up with two copies of the linking and approval-safety code. WhatsApp-only work is the Meta webhook, the WhatsApp message format, and phone-number linking UX.
+The goal is to reuse the existing agent and money API unchanged, so WhatsApp gets exactly the same checks as the web. Channel plumbing is shared with Telegram in `web/src/server/channels/`: one `channel_links` table keyed by channel and external id, shared dedupe / rate limit, and one card-text core with a thin layer per channel (`whatsapp/render.ts`, `telegram/render.ts`). WhatsApp-only work is the Meta webhook, the WhatsApp message format, and phone-number linking UX.
 
 ```mermaid
 flowchart LR

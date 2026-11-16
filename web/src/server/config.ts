@@ -83,11 +83,46 @@ export const config = {
     },
     /** Public https origin of this app, for links the bot sends. Falls back to the Vercel URL. */
     get appUrl() {
-      const u = (process.env.APP_URL || "").trim() || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
-      return u.replace(/\/+$/, "");
+      return config.appUrl;
     },
     get enabled() {
       return Boolean(this.token && this.webhookSecret && this.botUsername);
+    },
+  },
+  /**
+   * WhatsApp Cloud API. Off unless access token, phone number id, app secret
+   * and verify token are all set. WhatsApp only carries messages; money moves
+   * through channel.ts after an Approve tap.
+   */
+  whatsapp: {
+    get accessToken() {
+      return (process.env.WHATSAPP_ACCESS_TOKEN || "").trim();
+    },
+    get phoneNumberId() {
+      return (process.env.WHATSAPP_PHONE_NUMBER_ID || "").trim();
+    },
+    get businessAccountId() {
+      return (process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "").trim();
+    },
+    get appSecret() {
+      return (process.env.WHATSAPP_APP_SECRET || "").trim();
+    },
+    get verifyToken() {
+      return (process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
+    },
+    get graphVersion() {
+      return (process.env.WHATSAPP_GRAPH_VERSION || "v21.0").trim() || "v21.0";
+    },
+    /** Display number for wa.me links (digits only). Falls back to phone number id if unset. */
+    get displayNumber() {
+      const n = (process.env.WHATSAPP_DISPLAY_NUMBER || "").trim().replace(/\D/g, "");
+      return n;
+    },
+    get appUrl() {
+      return config.appUrl;
+    },
+    get enabled() {
+      return Boolean(this.accessToken && this.phoneNumberId && this.appSecret && this.verifyToken);
     },
   },
   /** How long a swap quote or send preview stays approvable. */

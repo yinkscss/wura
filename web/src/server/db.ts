@@ -128,6 +128,45 @@ create table if not exists telegram_updates (
   at        timestamptz not null default now()
 );
 
+-- Shared chat-channel links (Telegram + WhatsApp). Keyed by channel and the
+-- provider's external id (Telegram user id, or WhatsApp phone digits). Only
+-- user_id and a display label are stored; email and address come from users.
+-- History is deleted on unlink. Prefer these over the older telegram_* tables.
+create table if not exists channel_links (
+  channel     text not null,
+  external_id text not null,
+  user_id     text not null,
+  label       text not null default '',
+  history     jsonb not null default '[]',
+  created_at  timestamptz not null default now(),
+  primary key (channel, external_id),
+  unique (channel, user_id),
+  check (channel in ('telegram', 'whatsapp'))
+);
+create table if not exists channel_link_codes (
+  channel    text not null,
+  code_hash  text not null,
+  user_id    text not null,
+  expires_at timestamptz not null,
+  primary key (channel, code_hash),
+  check (channel in ('telegram', 'whatsapp'))
+);
+create table if not exists channel_rate (
+  channel      text not null,
+  external_id  text not null,
+  window_start timestamptz not null,
+  count        integer not null default 0,
+  primary key (channel, external_id, window_start),
+  check (channel in ('telegram', 'whatsapp'))
+);
+create table if not exists channel_dedupe (
+  channel    text not null,
+  message_id text not null,
+  at         timestamptz not null default now(),
+  primary key (channel, message_id),
+  check (channel in ('telegram', 'whatsapp'))
+);
+
 -- Naira partner (docs/mainnet-plan.md, Otowo's path 3). Serverless keeps
 -- nothing in memory, so the partner sign-in and every top-up and cash-out are
 -- stored here. No identity or bank details: the partner collects those on its

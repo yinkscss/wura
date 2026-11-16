@@ -135,8 +135,9 @@ Otherwise the API returns an error, and nothing is signed. The caps are **exampl
 - **Chat eval** (`npm run agent-eval -- <url>`): ten fixed prompts against a mock-mode server, checking card types and that the activity log never grows. Makes real calls to the configured model.
 
 - **Telegram bot** (`src/server/telegram/`, `/api/telegram/webhook`, `/api/telegram/link`): the same chat brain in Telegram, plan in `docs/telegram-bot-plan.md`. On the Channels page, "Connect Telegram" makes a single-use, 10-minute link (`t.me/<bot>?start=<code>`); the bot links that chat to the user's `user_id` only. Email and address come from the shared `users` table (`recordUser` / `sessionForUser` in `src/server/users.ts`, also used by the Claude connector), written on every sign-in, so they never go stale. Replies are plain text; quote, send and site cards become messages with inline buttons. Money moves only when the linked user taps a button: the tap calls `approveSendFromChat` / `approveSwapFromChat` / `cancelSend` / `cancelQuote` from `channel.ts` inside `withWallet`, and free text such as "yes" never approves. The webhook checks Telegram's secret header in constant time, ignores repeated `update_id`s, answers 200 and does the work in `after()` (`maxDuration` 60). Only private chats are served; 20 messages a minute per user. Rate limit, history and links live in Postgres (in memory without `DATABASE_URL`, demo only). On testnet with Privy, sends need "Approve from chat apps" turned on, otherwise the bot shows the `CHAT_APPROVAL_OFF` message; swaps are refused on testnet.
+- **WhatsApp** (`src/server/whatsapp/`, `/api/whatsapp/webhook`, `/api/whatsapp/link`): same brain and money path over Meta's Cloud API. Design in `docs/whatsapp.md`. WhatsApp only carries messages. Linking, dedupe, rate limit and card text are shared with Telegram via `src/server/channels/` (one `channel_links` table keyed by channel + external id). Channels page "Connect WhatsApp" makes a `wa.me` link with a one-time code; sending it links that phone (digits only, stored for routing, deleted on Disconnect / "unlink"). Webhook verifies `X-Hub-Signature-256`, records `wamid`, returns 200, then runs `handleMessage` in `after()`. Approve taps call `channel.ts` inside `withWallet` for the wallet linked to the sender's number. Mock mode can approve swaps; on testnet swaps hand off to the web, and sends need chat approvals (or a CTA URL to `/approve/...`).
 
-Claude, ChatGPT and WhatsApp appear only as "connected apps" labels, marked as not connected yet. They use generic icons, not their logos.
+ChatGPT still appears only as a "connected apps" label when not set up.
 
 ### Telegram bot setup
 
@@ -151,6 +152,13 @@ node scripts/telegram-webhook.mjs delete   # remove it
 ```
 
 4. Sign in to the web app, open Channels, tap Connect Telegram, then Start in the chat.
+
+### WhatsApp setup
+
+1. Create a Meta developer app with the WhatsApp product and a test (or production) number. See `docs/whatsapp.md`.
+2. Set in `.env.local` (or Vercel): `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, and `WHATSAPP_DISPLAY_NUMBER` (E.164 digits for `wa.me`, no `+`). Optional: `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_GRAPH_VERSION`.
+3. Register the webhook URL `https://your-app.example.com/api/whatsapp/webhook` in the Meta app (subscribe to `messages`). Use the same verify token. Locally, put a public https tunnel in front of `npm run dev`.
+4. Sign in to the web app, open Channels, tap Connect WhatsApp, send the pre-filled code from your phone.
 
 ## Scripts
 
