@@ -64,7 +64,8 @@ export type Quote = {
 export type Contact = { name: string; address: string };
 
 /** A memo the sender attached (text up to 28 bytes, or a numeric id). Exchanges often require one. */
-export type PaymentMemo = { type: "text" | "id"; value: string };
+/** "hash" only comes from a partner (a cash-out memo, as 64 hex characters); people type text or a number. */
+export type PaymentMemo = { type: "text" | "id" | "hash"; value: string };
 
 export type SendIntent = {
   id: string;
@@ -84,6 +85,12 @@ export type SendIntent = {
   perPaymentCap: number;
   expiresAt: number;
   status: "pending" | "sent" | "cancelled" | "expired";
+  /**
+   * Set when this is the payment that finishes a cash-out to a bank account.
+   * The partner says where to pay; it is read again before approval and before
+   * submit (server/cashout.ts). Never approved from a chat app or an approval link.
+   */
+  cashOut?: { id: string; from: Currency };
 };
 
 /** One payment seen for a link. Only "counted" ones add to what's paid. */
@@ -217,7 +224,11 @@ export type ApiErrorCode =
   | "CONTRACT_UNVERIFIED"
   | "SIMULATION_FAILED"
   | "CHAT_APPROVAL_OFF"
-  | "PRICE_TOO_FAR";
+  | "PRICE_TOO_FAR"
+  /** A cash-out the partner isn't ready to be paid for yet. */
+  | "NOT_READY"
+  /** The partner's payment details changed after the user saw or approved them. */
+  | "CHANGED";
 
 export type ApiError = { error: { code: ApiErrorCode; message: string } };
 

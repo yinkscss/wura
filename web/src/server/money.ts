@@ -430,6 +430,7 @@ export async function openApproval(
   const siteRequest = w.siteRequests.get(id);
   if (siteRequest) return { kind: "site-request", request: siteRequest };
   const intent = w.sends.get(id);
+  if (intent?.cashOut) throw new ApiFailure("BAD_REQUEST", "Cash-outs are approved on the cash-out screen in Wura, not from a link.", 409);
   if (intent) {
     if (intent.status === "expired" || (intent.status === "pending" && Date.now() > intent.expiresAt)) {
       if (tooOld(intent)) throw new ApiFailure("QUOTE_EXPIRED", APPROVAL_TOO_OLD, 410);
@@ -472,6 +473,8 @@ export async function createSend(s: Session, input: { intentId: string; approve:
   const w = wallet(s.userId);
   const intent = w.sends.get(String(input.intentId));
   if (!intent) throw new ApiFailure("INTENT_NOT_FOUND", "That payment preview doesn't exist. Ask again.", 404);
+  // A cash-out payment is approved only on the cash-out screen, which reads the partner again (server/cashout.ts).
+  if (intent.cashOut) throw new ApiFailure("BAD_REQUEST", "Approve this cash-out on the cash-out screen in Wura. Nothing was sent.", 409);
   if (intent.status !== "pending") {
     throw new ApiFailure("ALREADY_USED", "That payment was already sent or cancelled.", 409);
   }

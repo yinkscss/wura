@@ -97,6 +97,19 @@ Done when: paying a link from another wallet marks it paid exactly once.
 - Cash-out: preview, then `approve: true`, `checkLimits("NGN")`, sign the NGNC payment with the memo, submit, log.
 Done when: both complete in staging with the live partner.
 
+Built (code, not yet tried with real money):
+- **Partner sign-in.** It has no transaction kind of its own. The server already checks the challenge before asking for a signature and again on the way back (`ramp/link.ts`). The screen explains that signing can't move money, the wallet signs the hash, and the signature goes to `/api/funding/naira/signin`, never to Horizon.
+- **Top-up.** On the funding screen: choose naira or dollars, then the amount, sign in, open the partner's page, then check its status when the user comes back to the tab. The server writes the history entry when the top-up ends, so the screen doesn't log anything.
+- **Cash-out.** The new `/cash-out` screen: choose the amount, open the partner's page, wait for `readyToPay`, then preview, `approve: true`, the wallet signs, submit and log. `server/cashout.ts` reads the partner's answer again at preview, at approve and just before submit, and sends nothing if it changed. It also checks that:
+  - the asset is the pinned one;
+  - the amount is no more than the cash-out was started with (`ramp_transfers.amount`);
+  - `checkLimits` and the balance cover the partner's amount;
+  - a hash memo decodes from base64 to exactly 32 bytes;
+  - each cash-out is paid at most once: claimed on its `ramp_transfers` row (`claimCashOutPayment`, saved at once, so it survives a timeout mid-submit) and in `cashOutPaid`, before submit; given back only after a definite rejection.
+- **Where it's approved.** A cash-out can't be approved from chat, from an approval link or through `/api/tx/submit`. Its routes sit under `/api/funding/naira/cashout/`, so the partner cookie arrives.
+- **The log.** The payment shows as "Sent to the partner for your cash-out"; reconcile later adds "Cash-out paid to your bank account".
+- **Recent transfers.** The cash-out screen lists the stored top-ups and cash-outs, and a cash-out can be picked up again after a restart.
+
 **M7. Privy and environments.** A production Privy app with allowed origins. Preview secrets. Production and Preview must not share `SESSION_SECRET`, and Preview must not carry mainnet settings.
 
 **M8. Safety and ops.** The allowlist and starting caps (D5). A per-connection rate limit for Claude and ChatGPT before any money tools exist there. Alerts on failed submits, Horizon errors and stuck transfers. A short runbook: how to turn money off, how to read a stuck transaction, who to call at LINK. Database backups.

@@ -14,7 +14,8 @@ export type AlertKind =
   | "stuck_transfer"
   | "treasury_low"
   | "link_watcher_failed"
-  | "rate_limited";
+  | "rate_limited"
+  | "cashout_release_failed";
 
 const REPEAT_MS = 10 * 60 * 1000;
 const g = globalThis as unknown as { __alertSeen?: Map<string, number> };
