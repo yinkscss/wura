@@ -59,6 +59,8 @@ function exampleLink(): PaymentLink {
     id: "demo",
     code: "8F2K-15K",
     url: "https://example.com/p/8F2K-15K",
+    address: "GDEMO",
+    memo: "8F2K-15K",
     amount: 15_000_00,
     currency: "NGN",
     status: "open",

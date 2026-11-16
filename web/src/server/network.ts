@@ -110,6 +110,11 @@ export function bootProblems(env: Env): string[] {
   if ((env.SESSION_SECRET || "").length < 32) {
     problems.push("SESSION_SECRET (32+ characters) is required on mainnet.");
   }
+  // Payment links carry this address to strangers. VERCEL_URL changes every deploy and can sit behind a login wall.
+  const appUrl = (env.APP_URL || "").trim();
+  if (!/^https:\/\/[^/\s]+/i.test(appUrl) || /^https:\/\/(localhost|127\.|\[::1\])/i.test(appUrl)) {
+    problems.push("APP_URL (the public https address of the app, e.g. https://wura.app) is required on mainnet.");
+  }
   if ((env.TESTNET_CONTACTS || "").trim().length > 0) {
     problems.push("TESTNET_CONTACTS is set. Testnet addresses must not become contacts on mainnet.");
   }

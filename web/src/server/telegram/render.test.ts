@@ -41,7 +41,7 @@ const limits: Limits = { example: true, daily: { NGN: 1, USDC: 1 }, perPayment: 
 const cards: AgentCard[] = [
   { type: "quote", quote },
   { type: "send", intent },
-  { type: "link", link: { id: "lnk_1", code: "8F2K-15K", url: "https://example.com/p/8F2K-15K", amount: 1_500_000, currency: "NGN", status: "open", createdAt: 0, expiresAt: 1 } },
+  { type: "link", link: { id: "lnk_1", code: "8F2K-15K", url: "https://example.com/p/8F2K-15K", address: "GDEMO", memo: "8F2K-15K", amount: 1_500_000, currency: "NGN", status: "open", createdAt: 0, expiresAt: 1 } },
   { type: "balance", balances: { NGN: 100_00, USDC: 5_00 }, limits },
   { type: "rates", quote },
   { type: "refused", code: "LIMIT_DAILY", title: "Not sent", lines: ["Over today's limit."] },

@@ -13,12 +13,12 @@ import type {
 } from "@/lib/types";
 import { money, naira, usdc } from "@/lib/format";
 import { chatApprovalsAvailable, chatApprovalStatus, sendWithAgentKey } from "./agent-key";
-import { config, serverDevSigning, moneyLive } from "./config";
+import { config, serverDevSigning, moneyLive, onMainnet } from "./config";
 import { ApiFailure } from "./errors";
 import { compareVenues, EXAMPLE_FEE_BPS, marketRate, quoteSource } from "./routing";
 import type { Session } from "./session";
 import { signAndSubmit } from "./signer";
-import { getAccountStatus, isValidAccount } from "./stellar";
+import { assetFor, getAccountStatus, isValidAccount } from "./stellar";
 import { assetBalance, checkDestination, refuseInTestnet, startTestnetSend } from "./testnet";
 import { newId, wallet, type WalletState } from "./store";
 
@@ -475,8 +475,9 @@ export function cancelSend(s: Session, intentId: string) {
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
+/** 8 random characters (40 bits, so a code can't be guessed) and the amount, e.g. "K7P2QX4M-15K". Also the link's payment memo (13 characters, under the 28 allowed). */
 function linkCode(amount: number, currency: Currency) {
-  const b = randomBytes(4);
+  const b = randomBytes(8);
   const head = Array.from(b, (x) => CODE_ALPHABET[x % CODE_ALPHABET.length]).join("");
   const whole = Math.round(amount / 100);
   const tail =
@@ -484,17 +485,31 @@ function linkCode(amount: number, currency: Currency) {
   return `${head}-${tail}`;
 }
 
-export function createPaymentLink(s: Session, input: { amount: number; currency?: Currency }): PaymentLink {
+export async function createPaymentLink(s: Session, input: { amount: number; currency?: Currency }): Promise<PaymentLink> {
   const w = wallet(s.userId);
   const amount = requirePositiveInt(input.amount, "amount");
   const currency: Currency = input.currency === "USDC" ? "USDC" : "NGN";
+  if (moneyLive()) {
+    // The money goes straight to the creator's wallet, so it has to be able to receive this asset.
+    if (!assetFor(currency)) {
+      throw new ApiFailure("BAD_REQUEST", `${currency === "NGN" ? "Naira (NGNC)" : currency} links aren't available on ${config.networkLabel}.`, 409);
+    }
+    const acct = await getAccountStatus(s.address);
+    const ready = acct.exists && (currency === "USDC" ? acct.hasTrustline : acct.hasNgncTrustline);
+    if (!ready) {
+      throw new ApiFailure("BAD_REQUEST", `Your wallet can't receive ${currency === "NGN" ? "naira (NGNC)" : currency} yet. Finish wallet setup first, then make the link.`, 409);
+    }
+  }
+  const base = config.appUrl || (onMainnet() ? "" : "http://localhost:3000");
+  if (!base) throw new ApiFailure("BAD_REQUEST", "Payment links need APP_URL to be set, so there's no address to give the payer.", 503);
   const code = linkCode(amount, currency);
   const now = Date.now();
   const link: PaymentLink = {
     id: newId("lnk"),
     code,
-    // Reserved example host: this is not a working payment page.
-    url: `https://example.com/p/${code}`,
+    url: `${base}/pay/${code}`,
+    address: s.address,
+    memo: code,
     amount,
     currency,
     status: "open",
