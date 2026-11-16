@@ -118,7 +118,8 @@ export async function getAccountStatus(address: string): Promise<AccountStatus> 
  * (up to 200 recent payments are looked at). Failed transactions and payments
  * to anyone else are left out. Used by payment links (M5).
  */
-export async function incomingPaymentsWithMemo(address: string, memo: string): Promise<SeenPayment[]> {
+export async function incomingPaymentsWithMemo(address: string, memo: string, since = 0): Promise<SeenPayment[]> {
+  const out: SeenPayment[] = [];
   let page;
   try {
     page = await server().payments().forAccount(address).order("desc").limit(200).join("transactions").call();
@@ -126,24 +127,36 @@ export async function incomingPaymentsWithMemo(address: string, memo: string): P
     if (isNotFound(err)) return [];
     throw networkError(err);
   }
-  const out: SeenPayment[] = [];
-  for (const r of page.records as unknown as Array<Record<string, unknown>>) {
-    const type = String(r.type);
-    if (type !== "payment" && type !== "path_payment_strict_send" && type !== "path_payment_strict_receive") continue;
-    if (r.to !== address || r.transaction_successful === false) continue;
-    // With join=transactions the SDK keeps the joined object in transaction_attr; `transaction` becomes a lazy-fetch function.
-    const tx = (r.transaction_attr ?? r.transaction) as { memo_type?: string; memo?: string } | undefined;
-    if (!tx || tx.memo_type !== "text" || tx.memo !== memo) continue;
-    const native = r.asset_type === "native";
-    out.push({
-      id: String(r.id),
-      hash: String(r.transaction_hash),
-      amount: String(r.amount),
-      assetCode: native ? "XLM" : String(r.asset_code),
-      assetIssuer: native ? "" : String(r.asset_issuer),
-      memo,
-      at: Date.parse(String(r.created_at)),
-    });
+  // Walk back through older pages until we pass the moment the link was made (at most 10 pages, 2000 payments),
+  // so a busy account can't push the matching payment out of view.
+  for (let pages = 0; pages < 10; pages++) {
+    const records = page.records as unknown as Array<Record<string, unknown>>;
+    if (records.length === 0) break;
+    for (const r of records) {
+      const type = String(r.type);
+      if (type !== "payment" && type !== "path_payment_strict_send" && type !== "path_payment_strict_receive") continue;
+      if (r.to !== address || r.transaction_successful === false) continue;
+      // With join=transactions the SDK keeps the joined object in transaction_attr; `transaction` becomes a lazy-fetch function.
+      const tx = (r.transaction_attr ?? r.transaction) as { memo_type?: string; memo?: string } | undefined;
+      if (!tx || tx.memo_type !== "text" || tx.memo !== memo) continue;
+      const native = r.asset_type === "native";
+      out.push({
+        id: String(r.id),
+        hash: String(r.transaction_hash),
+        amount: String(r.amount),
+        assetCode: native ? "XLM" : String(r.asset_code),
+        assetIssuer: native ? "" : String(r.asset_issuer),
+        memo,
+        at: Date.parse(String(r.created_at)),
+      });
+    }
+    const oldest = Date.parse(String(records[records.length - 1].created_at));
+    if (records.length < 200 || oldest < since) break;
+    try {
+      page = await page.next();
+    } catch (err) {
+      throw networkError(err);
+    }
   }
   return out;
 }

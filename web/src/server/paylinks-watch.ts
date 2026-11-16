@@ -11,9 +11,10 @@ import { findLink, wallet, watchedLinks, withWallet } from "./store";
  * The payment link watcher (M5). It asks Horizon what arrived at the creator's
  * address with the link's memo, then lets applyPayments decide the link's state.
  *
- * Runs when someone opens /pay/<code>, when the creator opens their links, and
- * from the cron route, so a payment is noticed within a minute or so even if
- * nobody is looking. It is safe to run any number of times at once: payments are
+ * Runs when someone opens /pay/<code>, when the creator opens their wallet or
+ * links list, and from /api/cron/links. That route only runs if a scheduler calls
+ * it (see CRON_SECRET in .env.example), so without one a payment is noticed the
+ * next time someone looks. It is safe to run any number of times at once: payments are
  * kept by Horizon operation id, the wallet row is locked while the result is
  * saved, and "paid" is written to the log only on the run that first sees it.
  */
@@ -38,7 +39,7 @@ export async function refreshLink(userId: string, link: PaymentLink, opts: { for
   checked().set(link.code, now);
 
   // Horizon first, outside the wallet lock; only the saving happens inside it.
-  const seen = await incomingPaymentsWithMemo(link.address, link.memo);
+  const seen = await incomingPaymentsWithMemo(link.address, link.memo, link.createdAt);
 
   return withWallet(userId, async () => {
     const w = wallet(userId);
@@ -55,7 +56,7 @@ export async function refreshLink(userId: string, link: PaymentLink, opts: { for
       const base = { kind: "link" as const, txRef: p.hash, explorerUrl: config.explorerTx(p.hash) };
       if (p.kind === "counted") {
         const nowPaid = before.status !== "paid" && after.status === "paid" && after.paidTx === p.hash;
-        log(w, { ...base, detail: nowPaid ? "Payment link paid" : "Part payment on a payment link", amount: fmt(p.amount), status: nowPaid ? "done" : "open" });
+        log(w, { ...base, detail: nowPaid ? "Payment link paid" : "Part payment on a payment link", amount: fmt(nowPaid ? after.receivedMinor ?? p.amount : p.amount), status: nowPaid ? "done" : "open" });
       } else {
         const why = { late: "after the link expired", extra: "after it was already paid", wrong_asset: "in the wrong asset" }[p.kind];
         log(w, { ...base, detail: `Payment link: a payment arrived ${why} and wasn't counted`, amount: p.kind === "wrong_asset" ? `${p.amount / 100} ${p.assetCode}` : fmt(p.amount), status: "refused" });

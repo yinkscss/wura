@@ -13,7 +13,7 @@ import type {
 } from "@/lib/types";
 import { money, naira, usdc } from "@/lib/format";
 import { chatApprovalsAvailable, chatApprovalStatus, sendWithAgentKey } from "./agent-key";
-import { config, serverDevSigning, moneyLive } from "./config";
+import { config, serverDevSigning, moneyLive, onMainnet } from "./config";
 import { ApiFailure } from "./errors";
 import { compareVenues, EXAMPLE_FEE_BPS, marketRate, quoteSource } from "./routing";
 import type { Session } from "./session";
@@ -500,12 +500,14 @@ export async function createPaymentLink(s: Session, input: { amount: number; cur
       throw new ApiFailure("BAD_REQUEST", `Your wallet can't receive ${currency === "NGN" ? "naira (NGNC)" : currency} yet. Finish wallet setup first, then make the link.`, 409);
     }
   }
+  const base = config.appUrl || (onMainnet() ? "" : "http://localhost:3000");
+  if (!base) throw new ApiFailure("BAD_REQUEST", "Payment links need APP_URL to be set, so there's no address to give the payer.", 503);
   const code = linkCode(amount, currency);
   const now = Date.now();
   const link: PaymentLink = {
     id: newId("lnk"),
     code,
-    url: `${config.appUrl || "http://localhost:3000"}/pay/${code}`,
+    url: `${base}/pay/${code}`,
     address: s.address,
     memo: code,
     amount,

@@ -86,7 +86,7 @@ test("a second full payment after paid is shown as extra and not counted", () =>
   assert.equal(r.paidTx, a.hash);
   assert.deepEqual(r.payments?.map((p) => p.kind), ["counted", "extra"]);
   assert.equal(r.receivedMinor, 1000);
-  assert.match(linkStateText(r, (m) => `${m / 100}`), /1 extra payment/);
+  assert.match(linkStateText(r, (m) => `${m / 100}`), /1 other payment/);
 });
 
 test("a late payment never marks the link paid", () => {

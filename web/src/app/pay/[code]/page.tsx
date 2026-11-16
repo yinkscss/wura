@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { money } from "@/lib/format";
 import { config, moneyLive } from "@/server/config";
 import { linkAsset, refreshByCode } from "@/server/paylinks-watch";
@@ -7,14 +8,21 @@ import { payUri } from "@/server/paylinks";
 import { CopyField } from "./copy-field";
 
 export const metadata: Metadata = { title: "Pay with Wura", robots: { index: false, follow: false } };
-export const dynamic = "force-dynamic";
 
 /**
  * Public payment page. Shows only what a payer needs: who gets paid (a wallet
  * address, which is public anyway), how much, and the memo. Never the owner's
  * email or user id. The money goes straight to the creator's wallet.
  */
-export default async function PayPage({ params }: { params: Promise<{ code: string }> }) {
+export default function PayPage({ params }: { params: Promise<{ code: string }> }) {
+  return (
+    <Suspense>
+      <PayBody params={params} />
+    </Suspense>
+  );
+}
+
+async function PayBody({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   const found = /^[A-Z0-9-]{4,24}$/.test(code) ? await refreshByCode(code) : null;
   if (!found || !found.link.address || !found.link.memo) notFound();

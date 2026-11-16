@@ -130,13 +130,15 @@ export function linkStateText(link: PaymentLink, fmt: (minor: number, c: Currenc
   const lateOrWrong = (link.payments ?? []).some((p) => p.kind === "late" || p.kind === "wrong_asset");
   const extra = (link.payments ?? []).filter((p) => p.kind === "extra").length;
   switch (link.status) {
-    case "paid":
-      return extra > 0 ? `Paid. ${extra} extra payment${extra === 1 ? "" : "s"} also arrived and weren't counted.` : "Paid";
+    case "paid": {
+      const odd = extra + (link.payments ?? []).filter((p) => p.kind === "late" || p.kind === "wrong_asset").length;
+      return odd > 0 ? `Paid. ${odd} other payment${odd === 1 ? "" : "s"} also arrived and weren't counted. Check Activity.` : "Paid";
+    }
     case "partial":
       return `Part paid: ${got} of ${fmt(link.amount, link.currency)} so far`;
     case "expired":
       return lateOrWrong || (link.receivedMinor ?? 0) > 0
-        ? `Expired. ${got} of ${fmt(link.amount, link.currency)} arrived in time; see the payments listed.`
+        ? `Expired. ${got} of ${fmt(link.amount, link.currency)} arrived in time. Check Activity for the rest.`
         : "Expired, nothing received";
     default:
       return "Open · not paid yet";

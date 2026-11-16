@@ -2,8 +2,6 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { refreshAllLinks } from "@/server/paylinks-watch";
 
-export const dynamic = "force-dynamic";
-
 /**
  * Checks every open payment link on Horizon. Call it on a schedule (a Vercel
  * cron or any scheduler) with `Authorization: Bearer $CRON_SECRET`. Without
