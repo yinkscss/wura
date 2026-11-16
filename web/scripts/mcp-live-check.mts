@@ -8,8 +8,8 @@ const { respondToConnect } = await import("../src/server/site-connect");
 const { withWallet } = await import("../src/server/store");
 
 const [address, host, shop] = process.argv.slice(2);
-const session = { userId: "u_mcp_live", email: "mcp-live@example.com", address } as never;
-const server = buildMcpServer(session, ["wura.read", "wura.prepare"] as never, "https://wura.example");
+const session = { userId: "u_mcp_live", email: "mcp-live@example.com", address } as { userId: string; email: string; address: string };
+const server = buildMcpServer(session as never,["wura.read", "wura.prepare"] as never, "https://wura.example");
 const [a, b] = InMemoryTransport.createLinkedPair();
 const client = new Client({ name: "check", version: "1" });
 await Promise.all([server.connect(a), client.connect(b)]);
@@ -19,7 +19,7 @@ const first = text(await client.callTool({ name: "connect_site", arguments: { ur
 console.log("1) connect_site:", first.slice(0, 230));
 const reqId = first.match(/approve\/(sr_[\w-]+)/)?.[1];
 if (!reqId) throw new Error("no permission link");
-await withWallet(session.userId, async () => respondToConnect(session, { requestId: reqId, connect: true, remember: false }));
+await withWallet(session.userId, async () => respondToConnect(session as never, { requestId: reqId, connect: true, remember: false }));
 const second = text(await client.callTool({ name: "connect_site", arguments: { url: host, want: "2 posters" } }));
 const parsed = JSON.parse(second);
 console.log("2) after allow:", parsed.status, "| contracts:", parsed.contracts.map((c: { address: string; functions: Array<{ name: string }> }) => `${c.address.slice(0, 6)}… [${c.functions.map((f) => f.name).join(",")}]`).join(" "), "| your_address ok:", parsed.your_address === address);
