@@ -8,6 +8,7 @@ import { checkLimits, log } from "./money";
 import type { Session } from "./session";
 import {
   attachSignature,
+  assetFor,
   buildUsdcPayment,
   buildUsdcTrustline,
   fundWithFriendbot,
@@ -17,6 +18,7 @@ import {
   verifySignature,
   type BuiltTx,
 } from "./stellar";
+import { prepareSponsoredSetup, sponsorshipConfigured } from "./treasury";
 import { newId, wallet, type PendingTx, type WalletState } from "./store";
 
 /**
@@ -40,7 +42,11 @@ export async function walletStatus(s: Session): Promise<WalletStatus> {
     xlm: st.xlm,
     usdc: st.usdc,
     hasTrustline: st.hasTrustline,
-    ready: st.exists && st.hasTrustline,
+    ngn: st.ngn,
+    hasNgncTrustline: st.hasNgncTrustline,
+    needsNgnc: assetFor("NGN") !== null,
+    sponsored: sponsorshipConfigured(),
+    ready: st.exists && st.hasTrustline && (assetFor("NGN") === null || st.hasNgncTrustline),
     usdcIssuer: config.usdc.issuer,
     usingCircleUsdc: config.usingCircleUsdc,
   };
@@ -60,10 +66,23 @@ export function needsSignature(s: Session, p: PendingTx): NeedsSignature {
 export async function setupWallet(s: Session): Promise<{ status: "ready"; wallet: WalletStatus; hash?: string } | NeedsSignature> {
   const w = wallet(s.userId);
   let st = await getAccountStatus(s.address);
-  if (!st.exists) {
-    if (config.stellarNetwork === "mainnet") {
-      throw new ApiFailure("BAD_REQUEST", "Your wallet needs to be activated first. Account setup arrives with sponsorship (M3).", 409);
+
+  // Wura's reserve sets the wallet up: account and trustlines, no XLM needed from the user (D1).
+  if (sponsorshipConfigured()) {
+    const ready = st.exists && st.hasTrustline && (assetFor("NGN") === null || st.hasNgncTrustline);
+    if (ready) return { status: "ready", wallet: await walletStatus(s) };
+    const tx = await prepareSponsoredSetup(s, st);
+    if (serverDevSigning()) {
+      const hash = await submit(signWithKeypair(tx.xdr, devKeypairFor(s.email)));
+      return { status: "ready", wallet: await walletStatus(s), hash };
     }
+    return needsSignature(s, park(w, tx, "setup"));
+  }
+  if (config.stellarNetwork === "mainnet") {
+    throw new ApiFailure("SIGNING_UNAVAILABLE", "Wallet setup isn't available on this server yet.", 503);
+  }
+
+  if (!st.exists) {
     await fundWithFriendbot(s.address);
     st = await getAccountStatus(s.address);
     if (!st.exists) throw new ApiFailure("BAD_REQUEST", "Friendbot didn't create the account. Try again in a minute.", 502);
@@ -162,7 +181,7 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
     throw err;
   }
 
-  if (p.kind === "trustline") return { status: "ready" as const, kind: p.kind, hash, wallet: await walletStatus(s) };
+  if (p.kind === "trustline" || p.kind === "setup") return { status: "ready" as const, kind: p.kind, hash, wallet: await walletStatus(s) };
   if (p.kind === "agent-key-on" || p.kind === "agent-key-off") return { status: "ready" as const, kind: p.kind, hash };
   const activity = finishSend(w, intent!, hash);
   return { status: "done" as const, kind: p.kind, hash, intent: intent!, activity, mock: false };

@@ -218,6 +218,48 @@ export async function getAccountSigners(address: string): Promise<AccountSigners
   }
 }
 
+export type SponsorInfo = {
+  exists: boolean;
+  /** XLM balance. */
+  xlm: number;
+  /** XLM free to spend or lock up: balance minus the minimum balance (reserves). */
+  available: number;
+  /** Ledger entries this account sponsors for others (an account is 1, a trustline is 1). */
+  sponsoringEntries: number;
+  sponsoredAccounts: number;
+};
+
+/** The treasury's balance and sponsorship load, straight from Horizon. */
+export async function getSponsorInfo(address: string): Promise<SponsorInfo> {
+  try {
+    const a = (await server().loadAccount(address)) as unknown as {
+      balances: Array<{ asset_type: string; balance: string }>;
+      subentry_count: number;
+      num_sponsoring?: number;
+      num_sponsored?: number;
+    };
+    const xlm = Number(a.balances.find((b) => b.asset_type === "native")?.balance ?? "0");
+    const sponsoring = a.num_sponsoring ?? 0;
+    const minimum = (2 + a.subentry_count + sponsoring - (a.num_sponsored ?? 0)) * 0.5;
+    // If this fails the account cap can't be checked, so setup must stop (networkError below).
+    const page = await server().accounts().sponsor(address).limit(200).call();
+    const sponsoredAccounts = page.records.length;
+    return { exists: true, xlm, available: xlm - minimum, sponsoringEntries: sponsoring, sponsoredAccounts };
+  } catch (err) {
+    if (isNotFound(err)) return { exists: false, xlm: 0, available: 0, sponsoringEntries: 0, sponsoredAccounts: 0 };
+    throw networkError(err);
+  }
+}
+
+/** Loads an account as an sdk Account (with its current sequence) to build a transaction from. */
+export async function loadSourceAccount(address: string) {
+  try {
+    return await server().loadAccount(address);
+  } catch (err) {
+    throw networkError(err);
+  }
+}
+
 /** Checks a 64-byte ed25519 signature over the transaction hash. */
 export function verifySignature(address: string, hashHex: string, signatureHex: string) {
   const sig = Buffer.from(signatureHex.replace(/^0x/, ""), "hex");

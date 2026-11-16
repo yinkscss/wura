@@ -34,7 +34,7 @@ import type { Contact } from "@/lib/types";
 
 export type PendingTx = {
   id: string;
-  kind: "send" | "trustline" | "agent-key-on" | "agent-key-off";
+  kind: "send" | "trustline" | "setup" | "agent-key-on" | "agent-key-off";
   xdr: string;
   hash: string;
   intentId?: string;

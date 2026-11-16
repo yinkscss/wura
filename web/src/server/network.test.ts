@@ -93,3 +93,11 @@ test("kill switch values", () => {
   for (const v of ["1", "true", "TRUE", "on", "yes"]) assert.equal(killSwitchOn({ MONEY_KILL: v }), true, v);
   for (const v of ["", "0", "false", undefined]) assert.equal(killSwitchOn({ MONEY_KILL: v }), false, String(v));
 });
+
+test("TREASURY_SECRET must be a valid key and differ from the other secrets", async () => {
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const k = Keypair.random().secret();
+  assert.deepEqual(bootProblems({ TREASURY_SECRET: k }), []);
+  assert.match(bootProblems({ TREASURY_SECRET: "nope" }).join(), /valid Stellar secret/);
+  assert.match(bootProblems({ TREASURY_SECRET: k, RAMP_TOKEN_KEY: k }).join(), /RAMP_TOKEN_KEY/);
+});
