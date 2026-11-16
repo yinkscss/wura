@@ -37,6 +37,7 @@ export const config = {
     return u.replace(/\/+$/, "");
   },
   horizonUrl: NET.horizonUrl,
+  sorobanRpcUrl: NET.sorobanRpcUrl,
   networkPassphrase: NET.passphrase,
   /** Empty on mainnet: there is no faucet. */
   friendbotUrl: NET.friendbotUrl,

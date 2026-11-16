@@ -2,12 +2,17 @@ import "server-only";
 import { createHash } from "node:crypto";
 import type { AllowedSite, DiscoveryStep, SiteAction, SiteConnectRequest } from "@/lib/types";
 import { usdc } from "@/lib/format";
-import { config } from "./config";
+import { config, moneyLive, serverDevSigning } from "./config";
+import { devKeypairFor } from "./dev-keys";
 import { ApiFailure } from "./errors";
 import { checkBalance, checkLimits, limitsFor, log } from "./money";
 import type { Session } from "./session";
 import { signAndSubmit } from "./signer";
-import { refuseInTestnet } from "./testnet";
+import { scanSite } from "./site-scan";
+import { describeToken, inspectContract, prepareCall, submitSoroban, type ContractInfo, type Prepared } from "./site-soroban";
+import { signWithKeypair } from "./stellar";
+import { finishSiteAction, needsSignature, park, usdcBalance } from "./testnet";
+import type { NeedsSignature } from "@/lib/types";
 import { encodeContractId } from "./strkey";
 import { newId, wallet, type WalletState } from "./store";
 
@@ -239,11 +244,20 @@ function discover(s: Session, w: WalletState, host: string, want: string): SiteA
 export type ConnectResult =
   | { kind: "permission"; request: SiteConnectRequest; siteName: string }
   | { kind: "action"; action: SiteAction }
-  | { kind: "declined"; request: SiteConnectRequest };
+  | { kind: "declined"; request: SiteConnectRequest }
+  /** Real sites: permission was given. The agent now reads the site and prepares the call. */
+  | { kind: "connected"; request: SiteConnectRequest };
 
 /** "Connect to this site and buy X." */
 export function requestSiteConnect(s: Session, input: { url: string; want?: string }): ConnectResult {
-  refuseInTestnet("Site payments");
+  if (moneyLive()) {
+    // Real sites go through the model: it reads the contract's function list and chooses the call.
+    throw new ApiFailure(
+      "SIGNING_UNAVAILABLE",
+      "I couldn't finish reading that site. Real sites need the AI model to pick the contract call, and it either isn't switched on or didn't answer in time. Nothing was sent. Try again.",
+      503,
+    );
+  }
   const w = wallet(s.userId);
   const { host, url } = parseSite(input.url);
   requireExampleSite(host);
@@ -274,7 +288,9 @@ export function respondToConnect(
     return { kind: "declined", request: req };
   }
   req.status = "connected";
+  req.createdAt = Date.now(); // the "just this once" permission runs from now
   if (input.remember === true) addAllowedSite(s, req.host);
+  if (moneyLive()) return { kind: "connected", request: req };
   return { kind: "action", action: discover(s, w, req.host, req.want) };
 }
 
@@ -282,6 +298,7 @@ export function respondToConnect(
 export async function approveSiteAction(s: Session, input: { actionId: string; approve: unknown }) {
   const w = wallet(s.userId);
   const action = w.siteActions.get(String(input.actionId));
+  if (action?.live) return approveLiveAction(s, input, action);
   if (!action) throw new ApiFailure("INTENT_NOT_FOUND", "That preview doesn't exist. Ask again.", 404);
   if (action.status !== "pending") throw new ApiFailure("ALREADY_USED", "That was already signed or cancelled.", 409);
   if (Date.now() > action.expiresAt) {
@@ -352,4 +369,207 @@ export function dismissSiteRequest(s: Session, requestId: string) {
   const r = wallet(s.userId).siteRequests.get(requestId);
   if (r && r.status === "pending") r.status = "declined";
   return { ok: true };
+}
+
+
+// ---------- Real sites (testnet) ----------
+//
+// The model never sees page text. It gets structured facts: which contracts the
+// page mentions, and each one's function list read from the chain. It picks a
+// function and values; we rebuild, simulate and read what that would do, and
+// the preview comes from the simulation. docs/site-connect.md.
+
+const JUST_THIS_ONCE_MS = 30 * 60 * 1000;
+
+function requireLive() {
+  if (!moneyLive()) throw new ApiFailure("SIGNING_UNAVAILABLE", "Real sites need MONEY_MODE=testnet.", 503);
+  if (config.stellarNetwork === "mainnet") {
+    throw new ApiFailure("SIGNING_UNAVAILABLE", "Connecting to sites isn't switched on for mainnet yet. Nothing was sent.", 503);
+  }
+}
+
+/** On the allow list, or the user said yes to this site in the last half hour. */
+function isPermitted(w: WalletState, host: string) {
+  if (isAllowed(w, host)) return true;
+  const cutoff = Date.now() - JUST_THIS_ONCE_MS;
+  return [...w.siteRequests.values()].some((r) => r.host === host && r.status === "connected" && r.createdAt > cutoff);
+}
+
+export type LiveInspection = {
+  kind: "inspected";
+  host: string;
+  contracts: Array<{ address: string; mentions: number; functions: ContractInfo["functions"] }>;
+  skipped: string[];
+};
+
+/** "Connect to this site": asks permission first, then reads the page and each contract's interface. */
+export async function connectLive(s: Session, input: { url: string; want?: string }): Promise<ConnectResult | LiveInspection> {
+  requireLive();
+  const w = wallet(s.userId);
+  const { host, url } = parseSite(input.url);
+  const want = String(input.want ?? "").trim().slice(0, 80);
+  if (!isPermitted(w, host)) {
+    const open = [...w.siteRequests.values()].find((r) => r.host === host && r.status === "pending");
+    const request: SiteConnectRequest = open
+      ? { ...open, want: want || open.want }
+      : { id: newId("sr"), host, url, want, createdAt: Date.now(), status: "pending" };
+    w.siteRequests.set(request.id, request);
+    return { kind: "permission", request, siteName: host };
+  }
+  const scan = await readSite(url);
+  const found = await Promise.allSettled(scan.candidates.slice(0, 3).map((c) => inspectContract(c.address)));
+  const contracts: LiveInspection["contracts"] = [];
+  found.forEach((r, i) => {
+    if (r.status === "fulfilled") contracts.push({ address: r.value.address, mentions: scan.candidates[i].mentions, functions: r.value.functions.slice(0, 40) });
+  });
+  if (contracts.length === 0) {
+    throw new ApiFailure(
+      "CONTRACT_NOT_FOUND",
+      scan.candidates.length
+        ? `I read ${host} and found contract addresses, but none of them is a contract I can read on ${config.stellarNetwork}, so I stopped. Nothing was sent.`
+        : `I read ${host} but couldn't find a Soroban contract to call, so I stopped. Nothing was sent.`,
+      404,
+    );
+  }
+  return { kind: "inspected", host, contracts, skipped: scan.skipped };
+}
+
+async function readSite(url: string) {
+  try {
+    return await scanSite(url);
+  } catch (err) {
+    console.error("site read failed", url, err instanceof Error ? err.message : err);
+    throw new ApiFailure("CONTRACT_NOT_FOUND", `I couldn't open that site (${err instanceof Error && err.name === "FetchRefused" ? err.message : "it didn't answer"}). Nothing was sent.`, 404);
+  }
+}
+
+function summaryFor(price: number, host: string, fn: string, gets: string[]) {
+  return price > 0 ? `Pay ${usdc(price)} to ${host}${gets.length ? ` and receive ${gets.join(", ")}` : ""}` : `Call ${fn} on ${host} (no payment)`;
+}
+
+/**
+ * An approval link was opened after its preview expired (a person reads the reply, opens the
+ * link, signs in). Simulate the same call again and show the fresh figures, with a new clock.
+ * Limits and balance are checked again. Nothing is signed.
+ */
+export async function refreshLiveAction(s: Session, action: SiteAction): Promise<SiteAction> {
+  requireLive();
+  if (!action.live || !action.liveCall) throw new ApiFailure("QUOTE_EXPIRED", "That preview expired. Ask your assistant again and I'll simulate it fresh.", 410);
+  if (action.status !== "pending" && action.status !== "expired") return action;
+  const w = wallet(s.userId);
+  const fresh = await prepareCall(s.address, action.liveCall);
+  const price = fresh.spend.usdcCents;
+  checkLimits(w, "USDC", price);
+  const balance = price > 0 ? await usdcBalance(s) : 0;
+  if (price > balance) throw new ApiFailure("INSUFFICIENT_BALANCE", "You don't have enough USDC for that on testnet.", 403);
+  const limits = limitsFor(w);
+  const gets = describeGets(fresh);
+  Object.assign(action, {
+    call: { fn: action.liveCall.fn, args: fresh.args },
+    steps: action.steps.map((st, i) => (i === 3 ? { ...st, detail: `Succeeds · takes ${price > 0 ? `$${(price / 100).toFixed(2)} USDC` : "no money"} from you` } : st)),
+    summary: summaryFor(price, action.host, action.liveCall.fn, gets),
+    price,
+    total: price,
+    balanceBefore: balance,
+    dailyRemainingAfter: limits.remainingToday.USDC - price,
+    gets,
+    feeXlm: (fresh.feeStroops / 1e7).toFixed(5),
+    expiresAt: Date.now() + config.quoteTtlMs,
+    status: "pending",
+  });
+  return action;
+}
+
+function describeGets(p: Prepared) {
+  return p.spend.incoming.map((t) => `${describeToken(t.token)} ${(Number(t.amount) / 1e7).toLocaleString("en-US", { maximumFractionDigits: 7 })}`);
+}
+
+/** The model chose a function and values. Rebuild and simulate it, and show what it would really do. */
+export async function prepareLiveCall(
+  s: Session,
+  input: { url: string; contract: string; fn: string; args: Record<string, unknown>; want?: string },
+): Promise<SiteAction> {
+  requireLive();
+  const w = wallet(s.userId);
+  const { host, url } = parseSite(input.url);
+  if (!isPermitted(w, host)) throw new ApiFailure("SITE_NOT_ALLOWED", `You haven't allowed me to connect to ${host} yet.`, 403);
+
+  // The contract must be one this site's own pages mention. The model can't aim a call at an arbitrary contract.
+  const scan = await readSite(url);
+  if (!scan.candidates.some((c) => c.address === input.contract)) {
+    throw new ApiFailure("CONTRACT_UNVERIFIED", `${host} doesn't point to that contract, so I won't call it.`, 403);
+  }
+  const prepared = await prepareCall(s.address, { contract: input.contract, fn: input.fn, args: input.args });
+  const price = prepared.spend.usdcCents;
+  checkLimits(w, "USDC", price);
+  if (price > 0 && price > (await usdcBalance(s))) {
+    throw new ApiFailure("INSUFFICIENT_BALANCE", "You don't have enough USDC for that on testnet.", 403);
+  }
+  const limits = limitsFor(w);
+  const gets = describeGets(prepared);
+  const action: SiteAction = {
+    id: newId("sa"),
+    host,
+    siteName: host,
+    want: String(input.want ?? "").trim().slice(0, 80),
+    contract: { address: input.contract, verified: true, name: "Deployed · interface read from the chain" },
+    call: { fn: input.fn, args: prepared.args },
+    steps: [
+      { label: "Read the page", detail: `${scan.fetched.length} file${scan.fetched.length === 1 ? "" : "s"} from ${host}` },
+      { label: "Found the contract", detail: input.contract },
+      { label: "Read its interface", detail: `${input.fn}(${prepared.args.map((a) => `${a.name}: ${a.type}`).join(", ")})` },
+      { label: "Simulated it", detail: `Succeeds · takes ${price > 0 ? `$${(price / 100).toFixed(2)} USDC` : "no money"} from you` },
+    ],
+    summary: summaryFor(price, host, input.fn, gets),
+    asset: "USDC",
+    price,
+    fee: 0,
+    total: price,
+    balanceBefore: price > 0 ? await usdcBalance(s) : 0,
+    dailyRemainingAfter: limits.remainingToday.USDC - price,
+    dailyLimit: limits.daily.USDC,
+    perPaymentCap: limits.perPayment.USDC,
+    expiresAt: Date.now() + config.quoteTtlMs,
+    status: "pending",
+    live: true,
+    gets,
+    feeXlm: (prepared.feeStroops / 1e7).toFixed(5),
+    liveCall: { url, contract: input.contract, fn: input.fn, args: input.args },
+  };
+  w.siteActions.set(action.id, action);
+  return action;
+}
+
+async function approveLiveAction(
+  s: Session,
+  input: { actionId: string; approve: unknown },
+  action: SiteAction,
+): Promise<NeedsSignature | { status: "done"; action: SiteAction; activity: ReturnType<typeof log>; mock: false }> {
+  requireLive();
+  const w = wallet(s.userId);
+  if (action.status !== "pending") throw new ApiFailure("ALREADY_USED", "That was already signed or cancelled.", 409);
+  if (Date.now() > action.expiresAt) {
+    action.status = "expired";
+    throw new ApiFailure("QUOTE_EXPIRED", "That preview expired. Ask again and I'll simulate it fresh.", 410);
+  }
+  if (input.approve !== true) {
+    throw new ApiFailure("NOT_APPROVED", "Nothing was signed. A site payment only goes ahead when you approve it.", 403);
+  }
+  if (!action.liveCall) throw new ApiFailure("INTENT_NOT_FOUND", "That preview can't be rebuilt. Ask again.", 404);
+  // The preview isn't trusted on its own: rebuild and simulate again, and refuse if it now costs more or does something else.
+  const fresh = await prepareCall(s.address, action.liveCall);
+  const sameGets = describeGets(fresh).join("|") === (action.gets ?? []).join("|");
+  if (fresh.spend.usdcCents > action.price || !sameGets) {
+    throw new ApiFailure("QUOTE_EXPIRED", "What that call does changed since the preview, so I stopped. Ask again and I'll show you the new one.", 409);
+  }
+  checkLimits(w, "USDC", fresh.spend.usdcCents);
+  if (fresh.spend.usdcCents > 0 && fresh.spend.usdcCents > (await usdcBalance(s))) {
+    throw new ApiFailure("INSUFFICIENT_BALANCE", "You don't have enough USDC for that on testnet.", 403);
+  }
+  const tx = { xdr: fresh.xdr, hash: fresh.hash };
+  if (serverDevSigning()) {
+    const hash = await submitSoroban(signWithKeypair(tx.xdr, devKeypairFor(s.email)));
+    return { status: "done", action, activity: finishSiteAction(w, action, hash), mock: false };
+  }
+  return needsSignature(s, park(w, tx, "site", action.id));
 }

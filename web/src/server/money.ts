@@ -10,6 +10,8 @@ import type {
   Contact,
   Quote,
   SendIntent,
+  SiteAction,
+  SiteConnectRequest,
 } from "@/lib/types";
 import { money, naira, usdc } from "@/lib/format";
 import { chatApprovalsAvailable, chatApprovalStatus, sendWithAgentKey } from "./agent-key";
@@ -372,8 +374,28 @@ const APPROVAL_NOT_FOUND =
  * stored address and amount, with every check run again, so the link from
  * the chat app keeps working but never approves stale numbers.
  */
-export async function openApproval(s: Session, id: string): Promise<{ kind: "send"; intent: SendIntent } | { kind: "quote"; quote: Quote }> {
+export async function openApproval(
+  s: Session,
+  id: string,
+): Promise<
+  | { kind: "send"; intent: SendIntent }
+  | { kind: "quote"; quote: Quote }
+  | { kind: "site"; action: SiteAction }
+  | { kind: "site-request"; request: SiteConnectRequest }
+> {
   const w = wallet(s.userId);
+  const siteAction = w.siteActions.get(id);
+  if (siteAction) {
+    if (siteAction.status === "pending" && Date.now() > siteAction.expiresAt) siteAction.status = "expired";
+    // A site call can't be rebuilt here: the assistant has to read the site and simulate it again.
+    if (siteAction.status === "expired") {
+      // A real site call is simulated again by the approval route (refreshLiveAction); a mock one can't be rebuilt.
+      if (!siteAction.live || tooOld(siteAction)) throw new ApiFailure("QUOTE_EXPIRED", "That preview expired. Ask your assistant again and I'll simulate it fresh.", 410);
+    }
+    return { kind: "site", action: siteAction };
+  }
+  const siteRequest = w.siteRequests.get(id);
+  if (siteRequest) return { kind: "site-request", request: siteRequest };
   const intent = w.sends.get(id);
   if (intent) {
     if (intent.status === "expired" || (intent.status === "pending" && Date.now() > intent.expiresAt)) {
@@ -404,7 +426,7 @@ export function openPreviewCount(s: Session) {
   const w = wallet(s.userId);
   const now = Date.now();
   const open = (v: { status: string; expiresAt: number }) => v.status === "pending" && v.expiresAt > now;
-  return [...w.sends.values()].filter(open).length + [...w.quotes.values()].filter(open).length;
+  return [...w.sends.values()].filter(open).length + [...w.quotes.values()].filter(open).length + [...w.siteActions.values()].filter(open).length;
 }
 
 /** Step 2: send it. Re-checks everything; the preview is not trusted on its own. */

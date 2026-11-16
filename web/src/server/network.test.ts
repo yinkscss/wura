@@ -94,6 +94,14 @@ test("kill switch values", () => {
   for (const v of ["", "0", "false", undefined]) assert.equal(killSwitchOn({ MONEY_KILL: v }), false, String(v));
 });
 
+test("Soroban RPC: testnet has a default, mainnet has none until set, and mainnet refuses a testnet RPC", () => {
+  assert.match(networkFor("testnet", {}).sorobanRpcUrl, /^https:\/\/soroban-testnet/);
+  assert.equal(networkFor("mainnet", {}).sorobanRpcUrl, "");
+  assert.equal(networkFor("mainnet", { SOROBAN_RPC_URL: "https://rpc.example.org" }).sorobanRpcUrl, "https://rpc.example.org");
+  assert.ok(bootProblems({ ...mainnet(), SOROBAN_RPC_URL: "https://soroban-testnet.stellar.org" }).some((p) => /SOROBAN_RPC_URL/.test(p)));
+  assert.deepEqual(bootProblems(mainnet({ SOROBAN_RPC_URL: "https://rpc.example.org" })), []);
+});
+
 test("TREASURY_SECRET must be a valid key and differ from the other secrets", async () => {
   const { Keypair } = await import("@stellar/stellar-sdk");
   const k = Keypair.random().secret();

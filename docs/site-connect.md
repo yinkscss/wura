@@ -2,13 +2,14 @@
 
 Wura should be able to connect to other blockchain sites when you ask it to — for example, “connect to this site and buy X”, or “go to this website, connect, and get this coin.”
 
-This is a scoped stretch skill, not one of the three core buildathon demo skills (swap, send, payment links and balances). The chosen approach is contract discovery by reading the site, not driving a browser. Nothing described here is live.
+This is a scoped stretch skill, not one of the three core buildathon demo skills (swap, send, payment links and balances). The chosen approach is contract discovery by reading the site, not driving a browser. On Stellar testnet (`MONEY_MODE=testnet`, with an LLM configured) the primary approach below is built. In mock mode only the fictional example sites work. Mainnet is refused. Site calls that spend anything other than USDC are refused for now, because only USDC is covered by the limits.
 
 ## Allow list, then approve every signature
 
 Before Wura connects to any new site, it always asks first: “Connect to this site?” It also offers to add that site to your allow list.
 
 - Allowlisted sites skip the “Connect to this site?” question the next time.
+- If you say yes without adding the site to the list, that yes lasts 30 minutes for that site, so the follow-up steps of the same request don't ask again.
 - Every payment or signature still needs your approval, even on an allowlisted site. The allow list is only permission to connect, not permission to sign.
 - You can remove a site from the list at any time.
 

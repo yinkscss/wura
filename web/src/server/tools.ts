@@ -7,7 +7,7 @@ import { ApiFailure } from "./errors";
 import { createPaymentLink, getActivity, getBalances, getLimits, getQuote, listContacts, precheckSwap, previewSend, saveContact } from "./money";
 import { marketNote } from "./rules";
 import type { Session } from "./session";
-import { requestSiteConnect } from "./site-connect";
+import { connectLive, prepareLiveCall, requestSiteConnect } from "./site-connect";
 import { withWallet } from "./store";
 
 /**
@@ -75,12 +75,24 @@ export const TOOLS: ToolSpec[] = [
   tool("get_balance", "Show the user's balances and how much they can still spend today under their limits.", {}, []),
   tool(
     "connect_site",
-    "Ask to connect to another Stellar site the user names (a domain) and simulate what they want to do there. Asks the user's permission first and signs nothing.",
+    "Connect to another Stellar site the user names (a domain). Asks the user's permission first and signs nothing. On a real network it returns the site's contracts and functions to choose from; in the example app it prepares the whole example purchase.",
     {
       url: { type: "string", description: "The site's domain or URL, as the user wrote it." },
       want: { type: "string", description: "What the user wants to do there, e.g. 'buy 2 posters'. Empty string if not said." },
     },
     ["url", "want"],
+  ),
+  tool(
+    "prepare_site_call",
+    "After connect_site returned contracts: choose one function of one returned contract and prepare that call. Simulates it and shows the user exactly what it would do. Signs nothing.",
+    {
+      url: { type: "string", description: "The same site link as in connect_site." },
+      contract: { type: "string", description: "A contract address exactly as returned by connect_site." },
+      function: { type: "string", description: "A function name exactly as returned for that contract." },
+      args: { type: "string", description: "JSON object of the function's arguments, keyed by parameter name, e.g. {\"buyer\":\"G...\",\"qty\":1}. Amounts are in the token's smallest unit." },
+      want: { type: "string", description: "What the user wants, in a few words." },
+    },
+    ["url", "contract", "function", "args"],
   ),
 ];
 
@@ -205,7 +217,43 @@ async function run(s: Session, name: string, input: Record<string, unknown>): Pr
         card: { type: "balance", balances, limits },
       };
     }
+    case "prepare_site_call": {
+      let args: unknown;
+      try {
+        args = JSON.parse(String(input.args ?? "{}"));
+      } catch {
+        throw new ApiFailure("BAD_REQUEST", "I couldn't read the call's values. Ask me again.");
+      }
+      if (!args || typeof args !== "object" || Array.isArray(args)) throw new ApiFailure("BAD_REQUEST", "I couldn't read the call's values. Ask me again.");
+      const action = await prepareLiveCall(s, {
+        url: String(input.url ?? ""),
+        contract: String(input.contract ?? ""),
+        fn: String(input.function ?? ""),
+        args: args as Record<string, unknown>,
+        want: String(input.want ?? ""),
+      });
+      return {
+        content: JSON.stringify({ status: "simulated; nothing signed until the user approves", host: action.host, summary: action.summary }),
+        isError: false,
+        card: { type: "site-action", action },
+        note: "I read the site, simulated the call and checked it against your limits. Here's exactly what you'd sign. Nothing is signed until you approve.",
+      };
+    }
     case "connect_site": {
+      if (moneyLive()) {
+        const r = await connectLive(s, { url: String(input.url ?? ""), want: String(input.want ?? "") });
+        if (r.kind === "permission") {
+          return {
+            content: JSON.stringify({ status: "asking the user for permission", host: r.request.host }),
+            isError: false,
+            card: { type: "site-permission", request: r.request, siteName: r.siteName },
+          };
+        }
+        if (r.kind === "inspected") {
+          return { content: JSON.stringify({ status: "read the site", host: r.host, your_address: s.address, contracts: r.contracts, could_not_read: r.skipped }), isError: false };
+        }
+        return { content: JSON.stringify({ status: "no contracts to show", host: r.kind === "declined" || r.kind === "connected" ? r.request.host : "" }), isError: false };
+      }
       const r = requestSiteConnect(s, { url: String(input.url ?? ""), want: String(input.want ?? "") });
       if (r.kind === "permission") {
         return {
@@ -214,7 +262,7 @@ async function run(s: Session, name: string, input: Record<string, unknown>): Pr
           card: { type: "site-permission", request: r.request, siteName: r.siteName },
         };
       }
-      if (r.kind === "declined") {
+      if (r.kind === "declined" || r.kind === "connected") {
         return { content: JSON.stringify({ status: "the user declined this site before", host: r.request.host }), isError: false };
       }
       return {
@@ -239,7 +287,7 @@ export async function runTool(s: Session, name: string, input: unknown): Promise
     return await withWallet(s.userId, () => run(s, name, args));
   } catch (err) {
     if (err instanceof ApiFailure) {
-      const title = name === "save_contact" ? "Not saved" : name === "preview_send" ? "Not sent" : name === "prepare_swap" ? "Not swapped" : name === "connect_site" ? "Not connected" : "Couldn't do that";
+      const title = name === "save_contact" ? "Not saved" : name === "preview_send" ? "Not sent" : name === "prepare_swap" ? "Not swapped" : name === "connect_site" || name === "prepare_site_call" ? "Not connected" : "Couldn't do that";
       return {
         content: JSON.stringify({ refused: err.code, message: err.message }),
         isError: true,

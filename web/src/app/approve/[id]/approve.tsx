@@ -3,15 +3,20 @@
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { QuoteCard, SendCard, type CardState } from "@/components/money-cards";
+import { SiteActionCard, SitePermissionCard } from "@/components/site-cards";
 import { useOverview } from "@/components/overview";
 import { Button, ButtonLink, Card, Wordmark } from "@/components/ui";
 import { PageHeader, SkeletonBlock } from "@/components/wallet-parts";
 import { api, ClientApiError } from "@/lib/api";
 import { money, naira, usdc } from "@/lib/format";
 import { useCompleteSigning } from "@/lib/signing";
-import type { NeedsSignature, Quote, SendIntent } from "@/lib/types";
+import type { NeedsSignature, Quote, SendIntent, SiteAction, SiteConnectRequest } from "@/lib/types";
 
-type Opened = { kind: "send"; intent: SendIntent } | { kind: "quote"; quote: Quote };
+type Opened =
+  | { kind: "send"; intent: SendIntent }
+  | { kind: "quote"; quote: Quote }
+  | { kind: "site"; action: SiteAction }
+  | { kind: "site-request"; request: SiteConnectRequest };
 type Done = { activity: { txRef?: string; explorerUrl?: string }; mock: boolean };
 
 const stateOf = (status: string): CardState =>
@@ -38,7 +43,11 @@ export function Approve({ params }: { params: Promise<{ id: string }> }) {
     try {
       const o = await api<Opened>("/api/approve", { id });
       setOpened(o);
-      setState(stateOf(o.kind === "send" ? o.intent.status : o.quote.status));
+      setState(
+        stateOf(
+          o.kind === "send" ? o.intent.status : o.kind === "quote" ? o.quote.status : o.kind === "site" ? (o.action.status === "signed" ? "approved" : o.action.status) : o.request.status === "pending" ? "pending" : o.request.status === "connected" ? "approved" : "cancelled",
+        ),
+      );
     } catch (e) {
       setOpened(null);
       setErr(e instanceof ClientApiError ? e.message : "Couldn't open this. Try again.");
@@ -71,6 +80,37 @@ export function Approve({ params }: { params: Promise<{ id: string }> }) {
     }
   }
 
+  async function approveSite(action: SiteAction) {
+    setState("busy");
+    setErr(null);
+    try {
+      const res = await completeSigning<Done>(await api<Done | NeedsSignature>("/api/sites/approve", { actionId: action.id, approve: true }));
+      setState("done");
+      setResult(
+        res.mock
+          ? { text: `Signed. ${action.summary} (mock — nothing was broadcast).` }
+          : { text: `Done. ${action.summary}.`, href: res.activity.explorerUrl },
+      );
+      void refresh();
+    } catch (e) {
+      setState("error");
+      setErr(e instanceof ClientApiError ? e.message : "That didn't go through. Nothing was signed.");
+    }
+  }
+
+  async function answerSite(request: SiteConnectRequest, connect: boolean, remember: boolean) {
+    setState("busy");
+    setErr(null);
+    try {
+      await api("/api/sites/respond", { requestId: request.id, connect, remember, quiet: true });
+      setState(connect ? "done" : "cancelled");
+      setResult({ text: connect ? `Allowed. Go back to your assistant and ask it to carry on with ${request.host}.` : "OK. Nothing was connected." });
+    } catch (e) {
+      setState("error");
+      setErr(e instanceof ClientApiError ? e.message : "That didn't work. Nothing was sent.");
+    }
+  }
+
   async function approveQuote(quote: Quote) {
     setState("busy");
     setErr(null);
@@ -96,6 +136,8 @@ export function Approve({ params }: { params: Promise<{ id: string }> }) {
     if (!opened) return;
     setState("cancelled");
     if (opened.kind === "send") await api("/api/send/cancel", { intentId: opened.intent.id }).catch(() => {});
+    else if (opened.kind === "site") await api("/api/sites/cancel", { actionId: opened.action.id }).catch(() => {});
+    else if (opened.kind === "site-request") await api("/api/sites/dismiss", { requestId: opened.request.id }).catch(() => {});
     else await api("/api/swap/cancel", { quoteId: opened.quote.id }).catch(() => {});
   }
 
@@ -107,6 +149,10 @@ export function Approve({ params }: { params: Promise<{ id: string }> }) {
         {opened ? (
           opened.kind === "send" ? (
             <SendCard intent={opened.intent} state={state} onConfirm={() => confirmSend(opened.intent)} onCancel={cancel} onRefresh={open} />
+          ) : opened.kind === "site" ? (
+            <SiteActionCard action={opened.action} state={state} onApprove={() => approveSite(opened.action)} onCancel={cancel} onRefresh={open} />
+          ) : opened.kind === "site-request" ? (
+            <SitePermissionCard request={opened.request} siteName={opened.request.host} state={state} onAnswer={(c, k) => answerSite(opened.request, c, k)} />
           ) : (
             <QuoteCard quote={opened.quote} state={state} onApprove={() => approveQuote(opened.quote)} onCancel={cancel} onRefresh={open} />
           )

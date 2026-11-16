@@ -217,6 +217,7 @@ function connectReply(r: ConnectResult): AgentReply {
     };
   }
   if (r.kind === "declined") return { text: `OK, I won’t connect to ${r.request.host}. Nothing was sent.` };
+  if (r.kind === "connected") return { text: `OK, I can connect to ${r.request.host}. Tell me what you want to do there.` };
   return {
     text: `I read ${r.action.host}, found its contract and simulated the payment. Here’s exactly what you’d sign — nothing is signed until you approve.`,
     card: { type: "site-action", action: r.action },

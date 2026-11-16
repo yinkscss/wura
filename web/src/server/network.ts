@@ -20,6 +20,8 @@ export type NetworkSpec = {
   name: NetworkName;
   passphrase: string;
   horizonUrl: string;
+  /** Soroban RPC, for contract lookups and simulation (site connect). Empty on mainnet until SOROBAN_RPC_URL is set. */
+  sorobanRpcUrl: string;
   /** Testnet only. Empty on mainnet: there is no faucet. */
   friendbotUrl: string;
   explorerBase: string;
@@ -30,6 +32,7 @@ const TESTNET: NetworkSpec = {
   name: "testnet",
   passphrase: "Test SDF Network ; September 2015",
   horizonUrl: "https://horizon-testnet.stellar.org",
+  sorobanRpcUrl: "https://soroban-testnet.stellar.org",
   friendbotUrl: "https://friendbot.stellar.org",
   explorerBase: "https://stellar.expert/explorer/testnet",
   usdcIssuer: CIRCLE_TESTNET_USDC_ISSUER,
@@ -39,6 +42,7 @@ const MAINNET: NetworkSpec = {
   name: "mainnet",
   passphrase: "Public Global Stellar Network ; September 2015",
   horizonUrl: "https://horizon.stellar.org",
+  sorobanRpcUrl: "",
   friendbotUrl: "",
   explorerBase: "https://stellar.expert/explorer/public",
   usdcIssuer: CIRCLE_MAINNET_USDC_ISSUER,
@@ -60,6 +64,7 @@ export function networkFor(mode: MoneyMode, env: Env): NetworkSpec {
   return {
     ...base,
     horizonUrl: (env.STELLAR_HORIZON_URL || "").trim() || base.horizonUrl,
+    sorobanRpcUrl: (env.SOROBAN_RPC_URL || "").trim() || base.sorobanRpcUrl,
     usdcIssuer: (env.STELLAR_USDC_ISSUER || "").trim() || base.usdcIssuer,
   };
 }
@@ -116,6 +121,9 @@ export function bootProblems(env: Env): string[] {
   }
   if (/testnet/i.test(net.horizonUrl)) {
     problems.push("STELLAR_HORIZON_URL points at testnet while MONEY_MODE=mainnet.");
+  }
+  if (/testnet/i.test(net.sorobanRpcUrl)) {
+    problems.push("SOROBAN_RPC_URL points at testnet while MONEY_MODE=mainnet.");
   }
   if ((env.SESSION_SECRET || "").length < 32) {
     problems.push("SESSION_SECRET (32+ characters) is required on mainnet.");

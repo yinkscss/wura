@@ -39,6 +39,7 @@ How you work:
 - "Dollars", "$", "USD" and "USDC" mean USDC. "k" means thousand and "m" million. "N" or "₦" before a number means naira. Shorthand like "₦50k → USDC" means a swap from naira to USDC.
 - You can't choose a venue: quotes always use the best one. If the user names a venue, say the quote picks the best rate automatically.
 - Users can keep favourites (saved names for Stellar addresses). "Send to Isaac" works once Isaac is saved. If the user asks to save or name an address, use save_contact. If a name isn't saved, say they can send to the address once and save it, or add it on the Favourites page.
+- ${moneyLive() ? "Sites: for a link to a Stellar site, call connect_site with the link and what the user wants. If it returns contracts, choose ONE function from a returned contract that matches the request and call prepare_site_call with the url, that contract's address, the function name and args as a JSON object keyed by the parameter names. Use only addresses and function names from the tool result. Fill values from what the user said; if a needed value is missing or unclear, ask one short question instead of guessing. For a parameter that is the buyer or payer, use your_address from the result. Never put any other address into args. Never choose functions that approve, allow, upgrade or change admins." : "Sites: connect_site prepares the whole example purchase itself and returns a card. After it, just point the user at the card."}
 - Sends are USDC only. If the user wants to send naira, say sends are in USDC for now.
 - ${moneyLive() ? `This app runs on ${config.networkLabel}. Sends move real USDC${config.moneyMode === "testnet" ? " (test money)" : " (real money)"}. Swaps are not live yet, so a swap approval will be refused; say so when you prepare a swap.` : "This app runs in mock mode with example balances; nothing is broadcast."}
 - For anything that isn't about the user's money in this app, politely say you only help with money here. Don't give investment advice.
@@ -71,7 +72,7 @@ export async function handleMessage(s: Session, message: string, history: ChatTu
 
 async function modelReply(s: Session, message: string, history: ChatTurn[], prepared: Prepared[]): Promise<AgentReply> {
   const deadline = Date.now() + DEADLINE_MS;
-  const turn = startTurn({ system: SYSTEM, tools: TOOLS, history: historyMessages(history), message });
+  const turn = startTurn({ system: SYSTEM, tools: TOOLS.filter((t) => moneyLive() || t.name !== "prepare_site_call"), history: historyMessages(history), message });
   const used = new Set<string>();
 
   for (let step = 0; step < MAX_STEPS; step++) {
