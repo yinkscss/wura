@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { BackIcon, CheckIcon, ShieldIcon, SparkIcon, WalletIcon } from "@/components/icons";
+import { SignInStickers } from "@/components/landing/sign-in-stickers";
 import { PRIVY_ENABLED } from "@/components/providers";
 import { Starfield } from "@/components/starfield";
 import { Button, Card, Wordmark, cx } from "@/components/ui";
@@ -191,6 +192,7 @@ function SignInScreen({ handlers }: { handlers: Handlers }) {
     <div className="hero-sky relative min-h-dvh overflow-hidden text-white">
       <Starfield arc interactive shooting fadeFrom={0.55} />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_50%_30%,rgba(90,170,255,0.35),transparent_70%)]" />
+      <SignInStickers />
       <header className="relative z-10 flex items-center justify-between px-5 py-6 sm:px-12">
         <Wordmark />
         <Link href="/" className="text-[13.5px] font-medium text-white/85 hover:text-white">

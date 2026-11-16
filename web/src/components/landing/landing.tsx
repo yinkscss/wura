@@ -17,9 +17,11 @@ import {
 import { Starfield } from "../starfield";
 import { ButtonLink, Wordmark, buttonClass, cx } from "../ui";
 import { HeroArc, HeroCardsMobile } from "./hero-arc";
+import { HeroHeadlineCoins, HeroMobilePeek, HeroStickers } from "./hero-stickers";
 import { HowDemo } from "./how-demo";
 import { LimitTester } from "./limit-tester";
 import { RoutingViz } from "./routing-viz";
+import { ScrollSticker } from "./stickers";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -110,6 +112,7 @@ function Hero() {
     <section ref={ref} className="hero-sky relative overflow-hidden pb-6 text-white md:pb-0">
       <Starfield arc interactive shooting fadeFrom={0.62} />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_45%_at_50%_30%,rgba(90,170,255,0.35),transparent_70%)]" />
+      <HeroStickers progress={scrollYProgress} />
 
       <motion.div style={{ y: copyY, opacity: copyOpacity }} className="relative z-10 px-5 pt-[100px] text-center sm:px-10 md:pt-[96px]">
         <motion.div
@@ -140,6 +143,7 @@ function Hero() {
           <Sparkle className="-left-8 -top-2" delay={0.9} size={16} />
           <Sparkle className="-right-10 top-6" delay={1.05} size={22} pink />
           <Sparkle className="-left-6 bottom-3" delay={1.2} size={12} />
+          <HeroHeadlineCoins />
         </h1>
 
         <motion.p
@@ -170,6 +174,9 @@ function Hero() {
         </motion.p>
       </motion.div>
 
+      <div className="relative z-[5] h-0 md:hidden">
+        <HeroMobilePeek />
+      </div>
       <div className="relative z-20 mt-8 hidden px-4 md:block">
         <HeroArc heroRef={ref} />
       </div>
@@ -181,10 +188,29 @@ function Hero() {
   );
 }
 
-function Section({ id, eyebrow, title, sub, children, className }: { id: string; eyebrow: string; title: ReactNode; sub?: string; children: ReactNode; className?: string }) {
+function Section({
+  id,
+  eyebrow,
+  title,
+  sub,
+  children,
+  className,
+  stickers,
+}: {
+  id: string;
+  eyebrow: string;
+  title: ReactNode;
+  sub?: string;
+  children: ReactNode;
+  className?: string;
+  /** Decorative ScrollStickers, positioned against the content column. */
+  stickers?: ReactNode;
+}) {
   return (
     <section id={id} className={cx("scroll-mt-20 px-5 py-20 sm:px-10 md:py-28", className)}>
-      <div className="mx-auto max-w-[1200px]">
+      <div className="relative mx-auto max-w-[1200px]">
+        {stickers}
+        <div className="relative">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -197,6 +223,7 @@ function Section({ id, eyebrow, title, sub, children, className }: { id: string;
           {sub && <p className="mt-4 text-[17px] leading-relaxed text-muted">{sub}</p>}
         </motion.div>
         {children}
+        </div>
       </div>
     </section>
   );
@@ -248,6 +275,13 @@ export function Landing() {
         eyebrow="Product"
         title="Best rate, before anything moves."
         sub="Ask for a swap and Wura quotes SDEX, Soroswap and Aquarius itself, then shows you the winner with the fee included. If a venue can’t be reached, it says so instead of guessing."
+        stickers={
+          <>
+            <ScrollSticker show="large" name="phone-currencies" rotate={9} depth={0.5} className="-top-[56px] right-[1%] w-[132px] xl:right-[3%] xl:w-[168px]" sizes="(min-width: 1280px) 180px, 140px" />
+            <ScrollSticker show="large" name="coin-dollar-teal" rotate={-8} depth={1} className="right-[130px] top-[150px] w-[52px] xl:right-[230px] xl:top-[130px] xl:w-[62px]" sizes="66px" />
+            <ScrollSticker show="small" name="coin-dollar-teal" rotate={-8} depth={0.15} className="-top-[60px] right-1 w-[48px] md:-top-[84px] md:w-[58px]" sizes="60px" />
+          </>
+        }
       >
         <div className="grid items-center gap-10 lg:grid-cols-[1.25fr_1fr]">
           <Reveal>
@@ -278,6 +312,13 @@ export function Landing() {
         title="Ask. Check the preview. Say yes."
         sub="Try it below. Pick a request and Wura walks through it the way it does in the app."
         className="bg-page"
+        stickers={
+          <>
+            <ScrollSticker show="large" name="pyramid-sphinx" rotate={-5} depth={0.6} fade className="-right-[60px] -top-[40px] w-[220px] xl:-right-[150px] xl:w-[300px]" sizes="(min-width: 1280px) 320px, 230px" />
+            <ScrollSticker show="large" name="coin-usdc-blue" rotate={10} depth={1.1} className="right-[150px] top-[150px] w-[54px] xl:right-[280px] xl:top-[140px] xl:w-[64px]" sizes="68px" />
+            <ScrollSticker show="small" name="pyramid-sphinx" rotate={-5} depth={0.15} className="-right-[34px] -top-[74px] w-[108px] md:-top-[104px] md:w-[136px]" sizes="140px" />
+          </>
+        }
       >
         <HowDemo />
       </Section>
@@ -287,6 +328,13 @@ export function Landing() {
         eyebrow="Safety"
         title="It can’t go wild with your money."
         sub="Approvals and spending caps are checked on our server before anything is signed. They aren’t just buttons in the app."
+        stickers={
+          <>
+            <ScrollSticker show="large" name="concrete-monument" rotate={3} depth={0.5} className="-top-[60px] right-[1%] w-[118px] xl:right-[4%] xl:w-[140px]" sizes="(min-width: 1280px) 150px, 124px" />
+            <ScrollSticker show="large" name="coin-euro" rotate={-9} depth={1.1} className="right-[140px] top-[40px] w-[50px] xl:right-[230px] xl:w-[58px]" sizes="62px" />
+            <ScrollSticker show="small" name="coin-euro" rotate={-9} depth={0.15} className="-top-[60px] right-1 w-[46px] md:-top-[84px] md:w-[56px]" sizes="58px" />
+          </>
+        }
       >
         <div className="grid items-start gap-8 lg:grid-cols-[1fr_1.05fr]">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -324,6 +372,13 @@ export function Landing() {
         title="One assistant, wherever you chat."
         sub="Same wallet, same limits and the same yes-before-anything rule in every app. The web app comes first; the chat apps are next."
         className="bg-page"
+        stickers={
+          <>
+            <ScrollSticker show="large" name="black-star-gate" rotate={4} depth={0.5} className="-top-[50px] -right-[24px] w-[200px] xl:-right-[90px] xl:w-[270px]" sizes="(min-width: 1280px) 290px, 210px" />
+            <ScrollSticker show="large" name="coin-usdc-lavender" rotate={9} depth={1.1} className="right-[124px] top-[150px] w-[50px] xl:right-[290px] xl:top-[160px] xl:w-[60px]" sizes="64px" />
+            <ScrollSticker show="small" name="camera" rotate={-7} depth={0.15} className="-top-[64px] right-0 w-[92px] md:-top-[92px] md:w-[118px]" sizes="120px" />
+          </>
+        }
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {CHANNELS.map((c, i) => (
@@ -343,8 +398,15 @@ export function Landing() {
         </div>
       </Section>
 
-      <section className="relative overflow-hidden px-5 py-24 text-center text-white sm:px-10" style={{ background: "linear-gradient(180deg,#061A58 0%,#08318D 45%,#1E6AE8 100%)" }}>
+      <section className="relative overflow-hidden px-5 pb-44 pt-24 text-center text-white sm:px-10 md:pb-24" style={{ background: "linear-gradient(180deg,#061A58 0%,#08318D 45%,#1E6AE8 100%)" }}>
         <Starfield arc interactive shooting density={1.8} />
+        <div className="pointer-events-none absolute inset-0 z-[5]">
+          <ScrollSticker show="large" name="statue-of-liberty" rotate={4} depth={0.4} className="-bottom-[30px] -left-[50px] w-[130px] xl:-left-[30px] xl:w-[180px]" sizes="(min-width: 1280px) 190px, 140px" />
+          <ScrollSticker show="large" name="coin-usdc-blue" rotate={-10} depth={1} className="bottom-[230px] left-[60px] w-[50px] xl:bottom-[300px] xl:left-[150px] xl:w-[60px]" sizes="64px" />
+          <ScrollSticker show="large" name="burj-khalifa" rotate={-3} depth={0.4} className="-bottom-[40px] -right-[20px] w-[96px] xl:right-[2%] xl:w-[120px]" sizes="(min-width: 1280px) 130px, 100px" />
+          <ScrollSticker show="mobile" name="statue-of-liberty" rotate={4} depth={0.1} float={4} className="-bottom-[24px] -left-[14px] w-[62px]" sizes="64px" />
+          <ScrollSticker show="mobile" name="burj-khalifa" rotate={-3} depth={0.1} float={4} className="-bottom-[30px] -right-[6px] w-[50px]" sizes="52px" />
+        </div>
         <div className="relative z-10 mx-auto max-w-[720px]">
           <Reveal>
             <h2 className="text-balance text-[40px] font-bold leading-[1.02] tracking-[-0.045em] sm:text-[60px]">Start with USDC. No ID needed.</h2>
