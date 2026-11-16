@@ -9,14 +9,13 @@ import type { Session } from "./session";
 import {
   buildAgentKeyOff,
   buildAgentKeyOn,
-  buildUsdcPayment,
   getAccountSigners,
   signWithKeypair,
   submit,
   type AccountSigners,
 } from "./stellar";
 import { wallet } from "./store";
-import { finishSend, needsSignature, park, recheckSend } from "./testnet";
+import { buildIntentPayment, finishSend, needsSignature, park, recheckSend } from "./testnet";
 
 /**
  * Chat approvals on Stellar testnet.
@@ -126,7 +125,7 @@ export async function sendWithAgentKey(s: Session, intent: SendIntent) {
     );
   }
   await recheckSend(s, w, intent);
-  const tx = await buildUsdcPayment(s.address, intent.to.address, intent.amount);
+  const tx = await buildIntentPayment(s, intent);
   const hash = await submit(signWithKeypair(tx.xdr, agentKeypairFor(s.userId)));
   const activity = finishSend(w, intent, hash);
   return { status: "done" as const, intent, activity, mock: false };
