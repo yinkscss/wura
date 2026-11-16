@@ -1,4 +1,4 @@
-import { approveCashOutPayment } from "@/server/cashout";
+import { approveCashOutPayment, orPartnerSignIn } from "@/server/cashout";
 import { partnerToken } from "@/server/ramp/cookie";
 import { authed, jsonBody } from "@/server/route";
 
@@ -7,5 +7,6 @@ import { authed, jsonBody } from "@/server/route";
 // The wallet signs the hash; the signature goes to ../submit, not /api/tx/submit.
 export const POST = authed(async (s, req) => {
   const b = await jsonBody(req);
-  return approveCashOutPayment(s, { intentId: String(b.intentId ?? ""), approve: b.approve }, partnerToken);
+  // A lapsed partner sign-in answers "needs_partner_signin"; the preview stays open for after it.
+  return orPartnerSignIn(() => approveCashOutPayment(s, { intentId: String(b.intentId ?? ""), approve: b.approve }, partnerToken));
 });

@@ -1,4 +1,4 @@
-import { cashOutSubmitCheck } from "@/server/cashout";
+import { cashOutSubmitCheck, orPartnerSignIn } from "@/server/cashout";
 import { partnerToken } from "@/server/ramp/cookie";
 import { authed, jsonBody } from "@/server/route";
 import { submitSigned } from "@/server/testnet";
@@ -8,5 +8,7 @@ import { submitSigned } from "@/server/testnet";
 // claimed so it can't be paid twice, and the payment is submitted and logged.
 export const POST = authed(async (s, req) => {
   const b = await jsonBody(req);
-  return submitSigned(s, { txId: String(b.txId ?? ""), signature: String(b.signature ?? "") }, { cashOut: cashOutSubmitCheck(s, partnerToken) });
+  // A lapsed partner sign-in answers "needs_partner_signin" before anything is claimed or sent;
+  // after it, the screen posts the same signature again.
+  return orPartnerSignIn(() => submitSigned(s, { txId: String(b.txId ?? ""), signature: String(b.signature ?? "") }, { cashOut: cashOutSubmitCheck(s, partnerToken) }));
 });

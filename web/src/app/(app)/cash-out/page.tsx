@@ -196,6 +196,8 @@ function MockPreview({ preview, onBack }: { preview: CashOutPreview; onBack: () 
 }
 
 type Submitted = { status: "done"; hash: string; activity: Activity };
+/** The step to repeat once the partner sign-in is renewed. A signed payment is retried with the same signature. */
+type Resume = "review" | "approve" | { txId: string; signature: string };
 
 /** A live cash-out: the partner's page, its status, then the payment from the wallet once the partner is ready. */
 function LiveCashOut({ live, onRestart }: { live: Live; onRestart: () => void }) {
@@ -205,6 +207,7 @@ function LiveCashOut({ live, onRestart }: { live: Live; onRestart: () => void })
   const [sent, setSent] = useState<Submitted | null>(null);
   const [busy, setBusy] = useState(false);
   const [payErr, setPayErr] = useState<string | null>(null);
+  const [renew, setRenew] = useState<{ signIn: PartnerSignIn; then: Resume } | null>(null);
   const signer = useStellarHashSigner();
   const ready = status?.kind === "cashout" && "readyToPay" in status && status.readyToPay && status.state === "waiting_for_you";
 
@@ -212,7 +215,9 @@ function LiveCashOut({ live, onRestart }: { live: Live; onRestart: () => void })
     setPayErr(null);
     setBusy(true);
     try {
-      setIntent(await api<SendIntent>("/api/funding/naira/cashout/pay", { id: live.id, from: live.from }));
+      const r = await api<SendIntent | PartnerSignIn>("/api/funding/naira/cashout/pay", { id: live.id, from: live.from });
+      if (isPartnerSignIn(r)) return setRenew({ signIn: r, then: "review" });
+      setIntent(r);
     } catch (e) {
       setPayErr(errText(e, "Couldn't get the payment details from the partner. Nothing was sent."));
     } finally {
@@ -225,7 +230,8 @@ function LiveCashOut({ live, onRestart }: { live: Live; onRestart: () => void })
     setPayErr(null);
     setBusy(true);
     try {
-      const n = await api<NeedsSignature>("/api/funding/naira/cashout/approve", { intentId: intent.id, approve: true });
+      const n = await api<NeedsSignature | PartnerSignIn>("/api/funding/naira/cashout/approve", { intentId: intent.id, approve: true });
+      if (isPartnerSignIn(n)) return setRenew({ signIn: n, then: "approve" });
       if (!signer) throw new ClientApiError("SIGNING_UNAVAILABLE", "This payment needs your Privy wallet, but Privy isn't configured.", 503);
       let signature: string;
       try {
@@ -233,14 +239,40 @@ function LiveCashOut({ live, onRestart }: { live: Live; onRestart: () => void })
       } catch {
         throw new ClientApiError("NOT_APPROVED", "Your wallet didn't sign, so nothing was sent.", 403);
       }
-      setSent(await api<Submitted>("/api/funding/naira/cashout/submit", { txId: n.txId, signature }));
-      setIntent(null);
-      void refresh();
+      await submit({ txId: n.txId, signature });
     } catch (e) {
-      const code = e instanceof ClientApiError ? e.code : null;
-      // The partner changed something, or the preview is stale: start the review again from fresh numbers.
-      if (code === "CHANGED" || code === "QUOTE_EXPIRED" || code === "NOT_READY") setIntent(null);
-      setPayErr(errText(e, "The payment didn't go through. Nothing was sent."));
+      failed(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submit(signed: { txId: string; signature: string }) {
+    const r = await api<Submitted | PartnerSignIn>("/api/funding/naira/cashout/submit", signed);
+    if (isPartnerSignIn(r)) return setRenew({ signIn: r, then: signed });
+    setSent(r);
+    setIntent(null);
+    void refresh();
+  }
+
+  function failed(e: unknown) {
+    const code = e instanceof ClientApiError ? e.code : null;
+    // The partner changed something, or the preview is stale: start the review again from fresh numbers.
+    if (code === "CHANGED" || code === "QUOTE_EXPIRED" || code === "NOT_READY" || code === "ALREADY_USED") setIntent(null);
+    setPayErr(errText(e, "The payment didn't go through. Nothing was sent."));
+  }
+
+  /** After the new partner sign-in: the same step again. Errors show here, not on the sign-in step. */
+  async function resume(then: Resume) {
+    setRenew(null);
+    if (then === "review") return review();
+    if (then === "approve") return approve();
+    setPayErr(null);
+    setBusy(true);
+    try {
+      await submit(then);
+    } catch (e) {
+      failed(e);
     } finally {
       setBusy(false);
     }
@@ -259,7 +291,18 @@ function LiveCashOut({ live, onRestart }: { live: Live; onRestart: () => void })
 
       {returned && signIn && <PartnerSignInStep signIn={signIn} onSignedIn={refresh} />}
 
-      {returned && !signIn && (
+      {renew && !signIn && (
+        <div className="flex flex-col gap-3">
+          <p className="rounded-2xl bg-pink/12 p-4 text-[13.5px] font-medium leading-relaxed text-pink-deep">
+            {typeof renew.then === "object"
+              ? "Your sign-in with the partner expired before the payment went out. Sign in again and we'll send the payment you already approved. Nothing was sent yet."
+              : "Your sign-in with the partner has expired. Sign in again to carry on. Nothing was sent."}
+          </p>
+          <PartnerSignInStep signIn={renew.signIn} onSignedIn={() => resume(renew.then)} onCancel={() => setRenew(null)} />
+        </div>
+      )}
+
+      {returned && !signIn && !renew && (
         <>
           <TransferStatusCard status={status} id={live.id} />
           {err && <p className="text-[13.5px] font-medium text-pink-deep" role="alert">{err}</p>}
@@ -301,8 +344,12 @@ function LiveCashOut({ live, onRestart }: { live: Live; onRestart: () => void })
 }
 
 function PaymentReview({ intent, busy, onApprove, onCancel }: { intent: SendIntent; busy: boolean; onApprove: () => void; onCancel: () => void }) {
+  const fee = intent.cashOut?.fee ?? null;
+  const receive = intent.cashOut?.receive ?? null;
   const rows: Array<[string, string]> = [
-    ["Amount", money(intent.amount, intent.asset)],
+    ["Leaves your wallet", money(intent.amount, intent.asset)],
+    ...(fee !== null ? [["Partner fee", money(fee, intent.asset)] as [string, string]] : []),
+    ...(receive !== null ? [["Reaches your bank", money(receive.amount, receive.currency)] as [string, string]] : []),
     ["To", `The partner · ${shortAddress(intent.to.address)}`],
     ["Payment reference", intent.memo ? (intent.memo.value.length > 20 ? `${intent.memo.value.slice(0, 8)}…${intent.memo.value.slice(-6)}` : intent.memo.value) : "None"],
     ["Left today after this", money(Math.max(0, intent.dailyRemainingAfter), intent.asset)],
@@ -319,7 +366,9 @@ function PaymentReview({ intent, busy, onApprove, onCancel }: { intent: SendInte
         ))}
       </dl>
       <p className="text-[12.5px] leading-relaxed text-soft">
-        The partner set the amount and the reference for your cash-out. We check them with the partner again before sending, and send nothing if they changed.
+        The partner set the amount and the reference for your cash-out.
+        {receive === null && " It shows what reaches your bank, after its fee, on its own page."} We check them with the partner again before sending, and send
+        nothing if they changed.
       </p>
       <PartnerNote kind="send" />
       <div className="flex flex-wrap gap-3">

@@ -6,7 +6,7 @@ import { ApiFailure } from "./errors";
 import { checkLimits, limitsFor } from "./money";
 import { cashOutPayment, ramp } from "./ramp";
 import { claimCashOutPayment, findTransfer, releaseCashOutPayment, type TransferRow } from "./ramp/records";
-import type { CashOutPayment, RampCurrency } from "./ramp/types";
+import type { CashOutPayment, PartnerSignIn, RampCurrency } from "./ramp/types";
 import type { Session } from "./session";
 import { assetFor, getAccountStatus, type AccountStatus, type BuiltTx } from "./stellar";
 import { newId, wallet, type WalletState } from "./store";
@@ -41,7 +41,7 @@ const NAME = "The partner";
 
 /** Where the cash-out's payment details come from. Swapped in tests. */
 export type CashOutDeps = {
-  payment: (s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }) => Promise<CashOutPayment | null>;
+  payment: (s: Session, input: { id: string; from: RampCurrency; partnerToken?: string }) => Promise<CashOutPayment | PartnerSignIn | null>;
   transfer: (key: { provider: string; service: RampCurrency; anchorTxId: string }) => Promise<TransferRow | null>;
   balance: (s: Session, asset: Currency) => Promise<number>;
   account: (address: string) => Promise<AccountStatus>;
@@ -68,6 +68,29 @@ const live: CashOutDeps = {
 export type TokenFor = (from: RampCurrency) => Promise<string | undefined>;
 
 const refuse = (code: ConstructorParameters<typeof ApiFailure>[0], msg: string, status = 409) => new ApiFailure(code, msg, status);
+
+/**
+ * The partner sign-in lapsed (or is about to). Carries the partner's new
+ * sign-in challenge, so the screen can ask the wallet to sign it and then
+ * repeat the same step. Nothing was claimed, cancelled or sent.
+ */
+export class PartnerSignInNeeded extends ApiFailure {
+  constructor(public signIn: PartnerSignIn) {
+    super("PARTNER_SIGNIN", "Your sign-in with the partner has expired. Sign in again with your wallet, then carry on. Nothing was sent.", 409);
+  }
+}
+
+/** For the cash-out routes: a sign-in the partner needs is an answer for the screen, not an error. */
+export async function orPartnerSignIn<T>(step: () => Promise<T>): Promise<T | PartnerSignIn> {
+  try {
+    return await step();
+  } catch (e) {
+    if (e instanceof PartnerSignInNeeded) return e.signIn;
+    throw e;
+  }
+}
+
+const isSignIn = (v: unknown): v is PartnerSignIn => typeof v === "object" && v !== null && (v as PartnerSignIn).status === "needs_partner_signin";
 
 /**
  * The partner's memo as a payment memo. SEP-24 sends a hash memo as base64;
@@ -109,7 +132,9 @@ export function samePayment(intent: SendIntent, p: CashOutPayment, memo: Payment
     intent.amount === p.amount &&
     intent.asset === p.currency &&
     intent.memo?.type === memo.type &&
-    intent.memo?.value === memo.value
+    intent.memo?.value === memo.value &&
+    (intent.cashOut?.fee ?? null) === (p.fee ?? null) &&
+    JSON.stringify(intent.cashOut?.receive ?? null) === JSON.stringify(p.receive ?? null)
   );
 }
 
@@ -119,6 +144,7 @@ async function readPayment(s: Session, id: string, from: RampCurrency, partnerTo
     throw refuse("BAD_REQUEST", "Cash-outs to a bank account need the live partner on mainnet.");
   }
   const p = await deps.payment(s, { id, from, partnerToken });
+  if (isSignIn(p)) throw new PartnerSignInNeeded(p);
   if (!p) {
     throw refuse("NOT_READY", "The partner isn't ready for your payment yet. Finish the steps on the partner's page, then check again. Nothing was sent.");
   }
@@ -127,6 +153,12 @@ async function readPayment(s: Session, id: string, from: RampCurrency, partnerTo
   if (p.id !== id || p.currency !== from || p.network !== "mainnet") throw wrong();
   if (!pinned || pinned.getCode() !== p.asset.code || pinned.getIssuer() !== p.asset.issuer) throw wrong();
   if (p.destination === s.address) throw wrong();
+  // The fee and what reaches the bank are shown to the user, so they must add up.
+  const fee = p.fee ?? null;
+  const receive = p.receive ?? null;
+  if (fee !== null && (!Number.isInteger(fee) || fee < 0 || fee >= p.amount)) throw wrong();
+  if (receive !== null && (!Number.isInteger(receive.amount) || receive.amount <= 0)) throw wrong();
+  if (receive !== null && receive.currency === from && receive.amount !== p.amount - (fee ?? 0)) throw wrong();
   // Every cash-out is recorded before the user is sent to the partner's page (ramp/link.ts).
   const row = await deps.transfer({ provider: ramp().id, service: from, anchorTxId: id });
   if (!row || row.userId !== s.userId || row.address !== s.address || row.kind !== "cashout") {
@@ -195,7 +227,7 @@ export async function prepareCashOutPayment(
     perPaymentCap: limits.perPayment[p.currency],
     expiresAt: Date.now() + config.quoteTtlMs,
     status: "pending",
-    cashOut: { id: input.id, from: input.from },
+    cashOut: { id: input.id, from: input.from, fee: p.fee ?? null, receive: p.receive ?? null },
   };
   w.sends.set(intent.id, intent);
   return intent;

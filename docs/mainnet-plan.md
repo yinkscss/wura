@@ -138,9 +138,39 @@ Built (code, not yet tried with real money): Stellar DEX only, as a strict-send 
 | 0. Automated | Typecheck, lint, tests with the partner and Horizon mocked, `next build`. Every pull request. | Nothing |
 | 1. Mock end to end | Browser check of the mock flow. Done on 15 November: sign-in, limits from the partner, caps refused, cash-out preview. Repeat after each change to those screens. | Nothing |
 | 2. Mainnet, no money | Read-only checks with a throwaway wallet: partner sign-in, order, status, balances, destination checks. | M1, M2 |
-| 3. Mainnet, small real money | $1 stable transfer. A ₦20,000 deposit and a ₦10,000 withdrawal through LINK, timed. A payment link paid from another wallet. A $1 swap and a small naira swap. One chat approval, once the D2 conditions are in. Olayinka and Otowo only, their own wallets. | Both agree in chat. M1 to M6 |
+| 3. Mainnet, small real money | $1 stable transfer. A ₦20,000 deposit and a ₦10,000 withdrawal through LINK, timed. A payment link paid from another wallet. A $1 swap and a small naira swap. No chat approval: M11 waits until after the hackathon. Olayinka and Otowo only, their own wallets. See "Stage 3 plan" below. | Both agree in chat. M1 to M6 |
 | 4. Allowlist beta | 10 known people, low caps, the kill switch tested once on purpose. | LINK's written licence answer (D6), M7, M8, M10, M11 |
 | 5. Wider | More users, higher caps. | D6 |
+
+## Stage 3 plan
+
+Olayinka and Otowo only, their own wallets, small amounts. The aim: prove one real naira round trip is safe and write down what LINK actually does (fee, timing, rate), so opening the beta later is a settings change, not a rewrite.
+
+**Before any real money**
+
+- [ ] The two cash-out fixes are merged (below): the partner's fee on the payment screen, and a clear "sign in again" when the partner sign-in lapses.
+- [ ] Runbook TODOs filled: database backups on, and one restore into a scratch database tried (Olayinka); a LINK contact (Otowo).
+- [ ] The LINK questions sent (Otowo). `money-side.md` still says not sent.
+- [x] Wura's own caps fit the test. On mainnet they are 25% of the example figures: ₦18,750 per payment and ₦50,000 a day; naira top-ups are capped at ₦50,000. ₦20,000 in and ₦10,000 out both fit.
+- [ ] Both agree in chat to start.
+
+**Steps, lowest risk first.** For each one, write down who did it, the transaction hash, the time taken, the fee, the rate and what arrived, in `money-side.md`.
+
+1. **No money.** Partner sign-in; open the top-up page; and the fee check: start a ₦10,000 cash-out, finish LINK's page, and when it says ready to pay, read what it asks the wallet to send (`amount_in`), its fee (`amount_fee`) and what reaches the bank (`amount_out`). Don't pay; let it expire. If `amount_in` is more than the ₦10,000 typed in Wura, every cash-out is refused today (nothing is sent). Then the guard is loosened to "up to the amount plus LINK's *published* fee", never the fee in the same answer.
+2. **$1 USDC send** between the two wallets.
+3. **A payment link** paid from the other wallet.
+4. **₦20,000 top-up.** This gives the NGNC for the cash-out.
+5. **₦10,000 cash-out** to a real bank account. Time it from approval to the bank.
+6. **A $1 swap and a small naira swap.**
+
+**Stop rule.** Any mismatch in an amount, a destination or the history: set `MONEY_KILL=1` and redeploy (runbook section 1), then read the transfer (runbook section 2). Don't retry until both have looked.
+
+**Who.** Otowo: the `link.ts` half of the two fixes, the LINK questions and contact. Olayinka: backups and the restore test, the screen half of the fixes. Both: the steps, together.
+
+**The two cash-out fixes**
+
+- *Partner fee.* In SEP-24 the fee comes out of what the wallet sends, and LINK publishes a fixed ₦200 naira withdrawal fee, so the likely result is ₦10,000 sent and ₦9,800 at the bank. The payment screen now shows "Leaves your wallet", "Partner fee" and "Reaches your bank" when the partner gives them. They must add up when both are naira, and a change after the preview stops the payment (`CHANGED`). Otowo: fill `fee` (`amount_fee`) and `receive` (`amount_out`, naira) in `cashOutPayment` (`ramp/link.ts`).
+- *Expired partner sign-in.* `cashOutPayment` used to answer null both for "not ready" and for "no usable sign-in", so the user saw "the partner isn't ready". The contract is now: answer the `PartnerSignIn` (from `signInStart`) when the sign-in is missing, rejected by LINK (401/403), or has less than 10 minutes left. The cash-out routes hand it to the screen, which asks the wallet to sign in again and repeats the same step; a payment already signed is sent with the same signature, since nothing was claimed or sent. Otowo: the `link.ts` side.
 
 ## Risks to watch
 
