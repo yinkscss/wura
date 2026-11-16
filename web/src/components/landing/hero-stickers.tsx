@@ -28,18 +28,19 @@ type Spot = {
 };
 
 // Reference layout at 1440×900 (gutter beside the 620px text column = 410px).
+// One overlapping collage per side, low on the edges and bleeding off-screen,
+// so the sky above and around the headline stays clear (Payrit-style). Order
+// is paint order: later entries sit on top within a side.
 const DESKTOP: Spot[] = [
-  { name: "big-ben", side: "left", x: -16, top: 104, h: 330, rot: -4, depth: 0.7, from: "lg" },
-  { name: "coin-dollar-teal", side: "left", x: 150, top: 118, w: 54, rot: 8, depth: 1, from: "lg" },
-  { name: "coin-usdc-blue", side: "left", x: 300, top: 200, w: 64, rot: -10, depth: 0.9, from: "xl" },
-  { name: "black-star-gate", side: "left", x: 100, top: 300, w: 236, rot: 4, depth: 0.5, from: "xl" },
-  { name: "pyramid-sphinx", side: "left", x: -70, top: 470, w: 270, rot: -5, depth: 0.35, fade: true, from: "lg" },
+  { name: "big-ben", side: "left", x: -34, top: 150, h: 400, rot: -7, depth: 0.6, from: "lg" },
+  { name: "black-star-gate", side: "left", x: 64, top: 336, w: 280, rot: 5, depth: 0.45, from: "xl" },
+  { name: "pyramid-sphinx", side: "left", x: -90, top: 500, w: 340, rot: -4, depth: 0.3, fade: true, from: "lg" },
+  { name: "coin-usdc-blue", side: "left", x: 196, top: 300, w: 62, rot: -10, depth: 0.8, from: "xl" },
 
-  { name: "statue-of-liberty", side: "right", x: -40, top: 92, h: 360, rot: 3, depth: 0.6, from: "lg" },
-  { name: "coin-euro", side: "right", x: 200, top: 110, w: 56, rot: -8, depth: 1, from: "lg" },
-  { name: "burj-khalifa", side: "right", x: 236, top: 206, h: 300, rot: -2, depth: 0.45, fade: true, from: "xl" },
-  { name: "phone-currencies", side: "right", x: 40, top: 400, w: 170, rot: 10, depth: 0.4, fade: true, from: "lg" },
-  { name: "coin-usdc-lavender", side: "right", x: 330, top: 470, w: 60, rot: 9, depth: 0.85, from: "xl" },
+  { name: "statue-of-liberty", side: "right", x: -64, top: 140, h: 420, rot: 4, depth: 0.6, from: "lg" },
+  { name: "burj-khalifa", side: "right", x: 150, top: 262, h: 330, rot: -6, depth: 0.45, fade: true, from: "xl" },
+  { name: "phone-currencies", side: "right", x: 24, top: 392, w: 205, rot: 11, depth: 0.35, fade: true, from: "lg" },
+  { name: "coin-euro", side: "right", x: 206, top: 548, w: 58, rot: -8, depth: 0.8, from: "xl" },
 ];
 
 // 768–1023: four landmarks at ~70% and a coin per side, fixed px.
@@ -177,7 +178,7 @@ function HeroSticker({
             transition={{ duration: 0.8, delay: 0.95 + index * 0.07, ease: [0.22, 1, 0.36, 1] }}
             style={{ rotate: s.rot }}
           >
-            <Floater amount={reduce ? 0 : 6 + (index % 3) * 2} seed={index + s.name.length}>
+            <Floater amount={reduce ? 0 : 3 + (index % 2) * 2} seed={index + s.name.length}>
               <StickerImg name={s.name} sizes={`${maxW}px`} style={fadeMask ? { maskImage: fadeMask, WebkitMaskImage: fadeMask } : undefined} />
             </Floater>
           </motion.div>
