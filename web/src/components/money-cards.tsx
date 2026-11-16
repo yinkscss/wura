@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { PaymentLink, Quote, SendIntent, VenueQuote } from "@/lib/types";
 import { day, money, naira, rate, usdcNumber } from "@/lib/format";
+import { linkStateText } from "@/server/paylinks";
 import { CheckIcon, ClockIcon, CopyIcon, LinkIcon, ShareIcon } from "./icons";
 import { Button, Eyebrow, Pill, cx } from "./ui";
 
@@ -304,7 +305,7 @@ export function LinkCard({ link }: { link: PaymentLink }) {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <Eyebrow>Payment link · active</Eyebrow>
+        <Eyebrow>Payment link · {link.status === "paid" ? "paid" : link.status === "expired" ? "expired" : "active"}</Eyebrow>
         <div className="nums mt-2 text-[40px] font-bold leading-none tracking-[-0.045em]">{amount}</div>
         <div className="mt-2 text-[14px] text-muted">Request · expires {day(link.expiresAt)} (7 days)</div>
       </div>
@@ -314,7 +315,7 @@ export function LinkCard({ link }: { link: PaymentLink }) {
       </div>
       <div className="h-px bg-line" />
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Status" value="Open · not paid yet" />
+        <Field label="Status" value={linkStateText(link, money)} />
         <Field label="Currency" value={link.currency} />
       </div>
       <div className="grid grid-cols-[1fr_1.3fr] gap-3">
@@ -337,7 +338,7 @@ export function LinkCard({ link }: { link: PaymentLink }) {
         </Button>
       </div>
       {shared && <p className="text-center text-[12.5px] text-muted">{shared}</p>}
-      <p className="text-[12px] text-soft">Example link on a reserved test domain. It isn’t a working payment page yet.</p>
+      <p className="text-[12px] text-soft">The payer sees your address and a memo, and pays straight into your wallet. Wura marks this paid when the payment arrives.</p>
     </div>
   );
 }

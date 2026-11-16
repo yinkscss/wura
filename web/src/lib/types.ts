@@ -78,15 +78,40 @@ export type SendIntent = {
   status: "pending" | "sent" | "cancelled" | "expired";
 };
 
+/** One payment seen for a link. Only "counted" ones add to what's paid. */
+export type LinkPayment = {
+  /** Horizon operation id; seeing the same one twice changes nothing. */
+  id: string;
+  hash: string;
+  /** Cents or kobo, rounded down. */
+  amount: number;
+  /** Exact amount in stroops, as a string. */
+  stroops: string;
+  assetCode: string;
+  assetIssuer: string;
+  at: number;
+  kind: "counted" | "late" | "extra" | "wrong_asset";
+};
+
 export type PaymentLink = {
   id: string;
   code: string;
   url: string;
   amount: number;
   currency: Currency;
-  status: "open" | "paid" | "expired";
+  /** "partial": something arrived but not the full amount yet. */
+  status: "open" | "partial" | "paid" | "expired";
   createdAt: number;
   expiresAt: number;
+  /** Where the money goes: the creator's own wallet. Links made before M5 don't have these two. */
+  address: string;
+  /** Unique text memo a payer must include; it's how Wura recognises the payment. */
+  memo: string;
+  payments?: LinkPayment[];
+  /** Cents or kobo that counted toward the link. */
+  receivedMinor?: number;
+  paidAt?: number;
+  paidTx?: string;
 };
 
 export type Balances = Record<Currency, number>;

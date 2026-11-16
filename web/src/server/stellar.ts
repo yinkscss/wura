@@ -4,6 +4,7 @@ import type { Currency } from "@/lib/types";
 import { config, moneyKilled, moneyLive } from "./config";
 import { ApiFailure } from "./errors";
 import { LINK } from "./ramp/link";
+import type { SeenPayment } from "./paylinks";
 
 /**
  * Stellar testnet access. Server-side only: the UI never talks to Horizon.
@@ -110,6 +111,41 @@ export async function getAccountStatus(address: string): Promise<AccountStatus> 
     if (isNotFound(err)) return { address, exists: false, xlm: "0", usdc: null, hasTrustline: false, ngn: null, hasNgncTrustline: false, memoRequired: false };
     throw networkError(err);
   }
+}
+
+/**
+ * Payments received by an address that carry this exact text memo, newest first
+ * (up to 200 recent payments are looked at). Failed transactions and payments
+ * to anyone else are left out. Used by payment links (M5).
+ */
+export async function incomingPaymentsWithMemo(address: string, memo: string): Promise<SeenPayment[]> {
+  let page;
+  try {
+    page = await server().payments().forAccount(address).order("desc").limit(200).join("transactions").call();
+  } catch (err) {
+    if (isNotFound(err)) return [];
+    throw networkError(err);
+  }
+  const out: SeenPayment[] = [];
+  for (const r of page.records as unknown as Array<Record<string, unknown>>) {
+    const type = String(r.type);
+    if (type !== "payment" && type !== "path_payment_strict_send" && type !== "path_payment_strict_receive") continue;
+    if (r.to !== address || r.transaction_successful === false) continue;
+    // With join=transactions the SDK keeps the joined object in transaction_attr; `transaction` becomes a lazy-fetch function.
+    const tx = (r.transaction_attr ?? r.transaction) as { memo_type?: string; memo?: string } | undefined;
+    if (!tx || tx.memo_type !== "text" || tx.memo !== memo) continue;
+    const native = r.asset_type === "native";
+    out.push({
+      id: String(r.id),
+      hash: String(r.transaction_hash),
+      amount: String(r.amount),
+      assetCode: native ? "XLM" : String(r.asset_code),
+      assetIssuer: native ? "" : String(r.asset_issuer),
+      memo,
+      at: Date.parse(String(r.created_at)),
+    });
+  }
+  return out;
 }
 
 /** Testnet only: creates and funds the account with test XLM. */

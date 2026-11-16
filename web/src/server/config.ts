@@ -31,6 +31,11 @@ export const config = {
   moneyMode: MODE,
   /** Which network addresses, links and passphrase point at. Mock mode uses testnet's. */
   stellarNetwork: NET.name,
+  /** Public https origin of this app (payment links, bot links). APP_URL, else the Vercel URL. */
+  get appUrl() {
+    const u = (process.env.APP_URL || "").trim() || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+    return u.replace(/\/+$/, "");
+  },
   horizonUrl: NET.horizonUrl,
   networkPassphrase: NET.passphrase,
   /** Empty on mainnet: there is no faucet. */

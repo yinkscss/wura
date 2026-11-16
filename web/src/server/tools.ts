@@ -154,12 +154,14 @@ async function run(s: Session, name: string, input: Record<string, unknown>): Pr
       };
     }
     case "create_payment_link": {
-      const link = createPaymentLink(s, { amount: toMinor(input.amount, "amount"), currency: currency(input.currency) });
+      const link = await createPaymentLink(s, { amount: toMinor(input.amount, "amount"), currency: currency(input.currency) });
       return {
         content: JSON.stringify({
           amount: money(link.amount, link.currency),
           url: link.url,
-          note: "Example link on a reserved test domain; it isn't a working payment page yet.",
+          note: moneyLive()
+            ? "Anyone with the link can pay it. Wura marks it paid when the payment arrives."
+            : "Demo link: this app isn't live, so nothing can pay it.",
         }),
         isError: false,
         card: { type: "link", link },
