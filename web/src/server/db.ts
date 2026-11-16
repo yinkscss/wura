@@ -130,15 +130,18 @@ create table if not exists telegram_updates (
 -- dollars; each is a separate partner service). The token lets the server read
 -- that user's transfers and open a partner page for them, nothing else. It is
 -- stored encrypted (AES-256-GCM, key from RAMP_TOKEN_KEY), never in the clear,
--- and the row is deleted when it expires (about a day).
+-- and the row is deleted when it expires (about a day). key_version says which
+-- RAMP_TOKEN_KEY encrypted the row, so the key can be rotated.
 create table if not exists ramp_sessions (
   user_id    text not null,
   service    text not null,
   address    text not null,
   token_enc  text not null,
+  key_version smallint not null default 1,
   expires_at timestamptz not null,
   updated_at timestamptz not null default now(),
-  primary key (user_id, service)
+  primary key (user_id, service),
+  check (service in ('NGN', 'USDC'))
 );
 
 -- One row per top-up or cash-out started with the partner. Amounts are minor
@@ -168,6 +171,7 @@ create table if not exists ramp_transfers (
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
   unique (provider, service, anchor_tx_id),
+  check (service in ('NGN', 'USDC')),
   check (kind in ('topup', 'cashout')),
   check (state in ('waiting_for_you', 'processing', 'done', 'failed'))
 );
