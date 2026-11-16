@@ -75,7 +75,7 @@ export const TOOLS: ToolSpec[] = [
   tool("get_balance", "Show the user's balances and how much they can still spend today under their limits.", {}, []),
   tool(
     "connect_site",
-    "Ask to connect to another Stellar site the user names (a domain) and simulate what they want to do there. Asks the user's permission first and signs nothing.",
+    "Connect to another Stellar site the user names (a domain). Asks the user's permission first and signs nothing. On a real network it returns the site's contracts and functions to choose from; in the example app it prepares the whole example purchase.",
     {
       url: { type: "string", description: "The site's domain or URL, as the user wrote it." },
       want: { type: "string", description: "What the user wants to do there, e.g. 'buy 2 posters'. Empty string if not said." },

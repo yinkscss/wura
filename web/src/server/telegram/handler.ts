@@ -163,10 +163,12 @@ async function onCallback(cq: TgCallbackQuery) {
 
   let outcome: string;
   let followUp: ReturnType<typeof renderCard> | null = null;
+  let agentMessage: string | undefined;
   try {
     const r = await withWallet(session.userId, () => runButton(session, button.action, button.id));
     outcome = r.outcome;
     followUp = r.followUp ?? null;
+    agentMessage = r.agentMessage;
   } catch (err) {
     outcome = err instanceof ApiFailure ? err.message : "Something went wrong. Nothing was sent.";
     if (!(err instanceof ApiFailure)) console.error("telegram: button failed:", err instanceof Error ? err.message : "unknown error");
@@ -177,9 +179,20 @@ async function onCallback(cq: TgCallbackQuery) {
   const body = [msg.text, outcome].filter(Boolean).join("\n\n");
   await editMessage(msg.chat.id, msg.message_id, body).catch(() => sendMessage(msg.chat.id, outcome));
   if (followUp) await sendMessage(msg.chat.id, followUp.text, followUp.keyboard);
+  if (agentMessage) {
+    // The model turn runs outside the wallet lock (handleMessage locks per tool call).
+    void sendTyping(msg.chat.id).catch(() => {});
+    try {
+      const rendered = renderReply(await handleMessage(session, agentMessage));
+      await sendMessage(msg.chat.id, rendered.text, rendered.keyboard);
+    } catch (err) {
+      console.error("telegram: site follow-up failed:", err instanceof Error ? err.message : "unknown error");
+      await sendMessage(msg.chat.id, "I couldn't finish reading that site. Nothing was sent. Try again in a moment.");
+    }
+  }
 }
 
-type ButtonResult = { outcome: string; followUp?: ReturnType<typeof renderCard> };
+type ButtonResult = { outcome: string; followUp?: ReturnType<typeof renderCard>; /** Message for the agent to carry on with, after the lock is released. */ agentMessage?: string };
 
 async function runButton(s: Session, action: string, id: string): Promise<ButtonResult> {
   const isSend = id.startsWith("snd_");
@@ -208,13 +221,16 @@ async function runButton(s: Session, action: string, id: string): Promise<Button
     case "sd": {
       const r = respondToConnect(s, { requestId: id, connect: action === "sc", remember: false });
       if (r.kind === "action") return { outcome: "Connected for this request.", followUp: renderCard({ type: "site-action", action: r.action }) };
-      if (r.kind === "connected") return { outcome: "Okay, you can connect. Ask me again what to do there." };
+      if (r.kind === "connected") {
+        const what = r.request.want ? ` and ${r.request.want}` : "";
+        return { outcome: `Allowed. Reading ${r.request.host}…`, agentMessage: `Go ahead and connect to ${r.request.host}${what}. I've allowed it.` };
+      }
       return { outcome: "Okay, I won't connect." };
     }
     case "sa": {
       const r = await approveSiteAction(s, { actionId: id, approve: true });
       // A real site call is signed by the wallet in the browser, which Telegram can't do.
-      if ("status" in r && r.status === "needs_signature") return { outcome: "This one needs your wallet to sign, so open Wura on the web and approve it there." };
+      if ("status" in r && r.status === "needs_signature") return { outcome: `This one needs your wallet to sign, so approve it in Wura on the web${config.telegram.appUrl ? `: ${config.telegram.appUrl}/approve/${id}` : "."}` };
       if (!("mock" in r)) return { outcome: "Done." };
       return { outcome: `Done: ${r.action.siteName} · ${r.action.call.fn}.${r.mock ? " (Mock mode: nothing was broadcast.)" : ""}` };
     }

@@ -16,6 +16,10 @@ export const POST = signedIn(async (s, req) => {
   const r = await withWallet(s.userId, async () =>
     respondToConnect(s, { requestId: String(b.requestId ?? ""), connect: b.connect, remember: b.remember }),
   );
+  if (r.kind === "connected" && b.quiet === true) {
+    // Answered from an approval page for an assistant (Claude, ChatGPT): that assistant carries on.
+    return { text: `Allowed. Go back to your assistant and ask it to carry on with ${r.request.host}.` };
+  }
   if (r.kind === "connected") {
     const what = r.request.want ? ` and ${r.request.want}` : "";
     return handleMessage(s, `Go ahead and connect to ${r.request.host}${what}. I've allowed it.`);
