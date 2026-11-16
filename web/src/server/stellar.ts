@@ -1,7 +1,9 @@
 import "server-only";
-import { Asset, BASE_FEE, Horizon, Keypair, Memo, Operation, StrKey, TransactionBuilder, type Transaction } from "@stellar/stellar-sdk";
+import { Account, Asset, BASE_FEE, Horizon, Keypair, Memo, Operation, StrKey, TransactionBuilder, type Transaction } from "@stellar/stellar-sdk";
+import type { Currency } from "@/lib/types";
 import { config, moneyKilled, moneyLive } from "./config";
 import { ApiFailure } from "./errors";
+import { LINK } from "./ramp/link";
 
 /**
  * Stellar testnet access. Server-side only: the UI never talks to Horizon.
@@ -19,6 +21,41 @@ export function assertMoneyOn() {
 const server = () => new Horizon.Server(config.horizonUrl);
 
 export const usdcAsset = () => new Asset(config.usdc.code, config.usdc.issuer);
+
+/**
+ * NGNC, the naira token (LINK's). It exists on mainnet only, so there is no
+ * naira asset on testnet. The issuer comes from LINK's pinned config.
+ */
+export const ngncAsset = () => new Asset(LINK.NGN.asset.code, LINK.NGN.asset.issuer);
+
+/** The Stellar asset for a currency, or null when this network has none (NGNC on testnet). */
+export function assetFor(currency: Currency): Asset | null {
+  if (currency === "USDC") return usdcAsset();
+  return config.stellarNetwork === "mainnet" ? ngncAsset() : null;
+}
+
+function requireAsset(currency: Currency): Asset {
+  const a = assetFor(currency);
+  if (!a) throw new ApiFailure("SIGNING_UNAVAILABLE", `${currency === "NGN" ? "Naira (NGNC)" : currency} isn't available on ${config.stellarNetwork}.`, 409);
+  return a;
+}
+
+/** A transaction memo. Anchors use text, id or hash (SEP-24 withdrawals). */
+export type TxMemo = { type: "text"; value: string } | { type: "id"; value: string } | { type: "hash"; value: string };
+
+export function toMemo(m: TxMemo): Memo {
+  switch (m.type) {
+    case "text":
+      if (Buffer.byteLength(m.value, "utf8") > 28) throw new ApiFailure("BAD_REQUEST", "That payment note is too long (28 characters at most).", 400);
+      return Memo.text(m.value);
+    case "id":
+      if (!/^\d{1,20}$/.test(m.value) || BigInt(m.value) > BigInt("18446744073709551615")) throw new ApiFailure("BAD_REQUEST", "That payment memo isn't a valid number.", 400);
+      return Memo.id(m.value);
+    case "hash":
+      if (!/^[0-9a-fA-F]{64}$/.test(m.value)) throw new ApiFailure("BAD_REQUEST", "That payment memo isn't a valid hash.", 400);
+      return Memo.hash(m.value);
+  }
+}
 
 export function isValidAccount(address: string) {
   return StrKey.isValidEd25519PublicKey(address);
@@ -40,26 +77,30 @@ export type AccountStatus = {
   /** USDC balance in cents, or null when there's no trustline. */
   usdc: number | null;
   hasTrustline: boolean;
+  /** NGNC (naira) balance in kobo, or null when there's no trustline. Always null off mainnet. */
+  ngn: number | null;
+  hasNgncTrustline: boolean;
 };
+
+const isCredit = (b: { asset_type: string }) => b.asset_type === "credit_alphanum4" || b.asset_type === "credit_alphanum12";
 
 export async function getAccountStatus(address: string): Promise<AccountStatus> {
   try {
     const acct = await server().loadAccount(address);
     let xlm = "0";
     let usdc: number | null = null;
+    let ngn: number | null = null;
+    const naira = assetFor("NGN");
     for (const b of acct.balances) {
       if (b.asset_type === "native") xlm = b.balance;
-      if (
-        (b.asset_type === "credit_alphanum4" || b.asset_type === "credit_alphanum12") &&
-        b.asset_code === config.usdc.code &&
-        b.asset_issuer === config.usdc.issuer
-      ) {
-        usdc = amountToCents(b.balance);
-      }
+      if (!isCredit(b)) continue;
+      const c = b as { asset_code: string; asset_issuer: string; balance: string };
+      if (c.asset_code === config.usdc.code && c.asset_issuer === config.usdc.issuer) usdc = amountToCents(c.balance);
+      if (naira && c.asset_code === naira.getCode() && c.asset_issuer === naira.getIssuer()) ngn = amountToCents(c.balance);
     }
-    return { address, exists: true, xlm, usdc, hasTrustline: usdc !== null };
+    return { address, exists: true, xlm, usdc, hasTrustline: usdc !== null, ngn, hasNgncTrustline: ngn !== null };
   } catch (err) {
-    if (isNotFound(err)) return { address, exists: false, xlm: "0", usdc: null, hasTrustline: false };
+    if (isNotFound(err)) return { address, exists: false, xlm: "0", usdc: null, hasTrustline: false, ngn: null, hasNgncTrustline: false };
     throw networkError(err);
   }
 }
@@ -83,7 +124,17 @@ export type BuiltTx = { xdr: string; hash: string };
 
 type Op = ReturnType<typeof Operation.payment> | ReturnType<typeof Operation.changeTrust> | ReturnType<typeof Operation.setOptions>;
 
-async function build(source: string, op: Op, memo?: string): Promise<BuiltTx> {
+/** Builds the unsigned transaction from an already-loaded account. Pure: no network, so it can be tested. */
+export function buildTx(account: Account, op: Op, memo?: Memo): BuiltTx {
+  const b = new TransactionBuilder(account, { fee: String(Number(BASE_FEE) * 2), networkPassphrase: config.networkPassphrase })
+    .addOperation(op)
+    .setTimeout(Math.floor(config.signTtlMs / 1000));
+  if (memo) b.addMemo(memo);
+  const tx = b.build();
+  return { xdr: tx.toXDR(), hash: tx.hash().toString("hex") };
+}
+
+async function build(source: string, op: Op, memo?: string | TxMemo): Promise<BuiltTx> {
   assertMoneyOn();
   let account;
   try {
@@ -92,21 +143,25 @@ async function build(source: string, op: Op, memo?: string): Promise<BuiltTx> {
     if (isNotFound(err)) throw new ApiFailure("BAD_REQUEST", `Your wallet isn't set up on ${config.stellarNetwork} yet. Set it up first.`, 409);
     throw networkError(err);
   }
-  const b = new TransactionBuilder(account, { fee: String(Number(BASE_FEE) * 2), networkPassphrase: config.networkPassphrase })
-    .addOperation(op)
-    .setTimeout(Math.floor(config.signTtlMs / 1000));
-  if (memo) b.addMemo(Memo.text(memo.slice(0, 28)));
-  const tx = b.build();
-  return { xdr: tx.toXDR(), hash: tx.hash().toString("hex") };
+  const m = typeof memo === "string" ? { type: "text" as const, value: memo.slice(0, 28) } : memo;
+  return buildTx(account, op, m ? toMemo(m) : undefined);
 }
 
-export function buildUsdcPayment(from: string, to: string, cents: number) {
-  return build(from, Operation.payment({ destination: to, asset: usdcAsset(), amount: centsToAmount(cents) }), "Wura");
+/** A payment of any supported asset, with an optional memo (default: the text "Wura"). */
+export async function buildPayment(input: { from: string; to: string; currency: Currency; cents: number; memo?: TxMemo }) {
+  const asset = requireAsset(input.currency);
+  return build(input.from, Operation.payment({ destination: input.to, asset, amount: centsToAmount(input.cents) }), input.memo ?? "Wura");
 }
 
-export function buildUsdcTrustline(address: string) {
-  return build(address, Operation.changeTrust({ asset: usdcAsset() }));
+/** Adds a trustline for a currency's asset. */
+export function buildTrustline(address: string, currency: Currency) {
+  return build(address, Operation.changeTrust({ asset: requireAsset(currency) }));
 }
+
+export const buildUsdcPayment = (from: string, to: string, cents: number) =>
+  buildPayment({ from, to, currency: "USDC", cents });
+export const buildUsdcTrustline = (address: string) => buildTrustline(address, "USDC");
+export const buildNgncTrustline = (address: string) => buildTrustline(address, "NGN");
 
 /**
  * Chat approvals: adds Wura's agent key as a second signer. Weights tested on
