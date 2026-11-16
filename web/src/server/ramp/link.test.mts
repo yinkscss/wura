@@ -34,8 +34,8 @@ const NAIRA_INFO = {
   withdraw: { NGNC: { enabled: true, min_amount: 10000, max_amount: 5000000 } },
   fee: { enabled: true },
 };
-const jwt = (sub: string, exp = Math.floor(Date.now() / 1000) + 600) =>
-  `h.${Buffer.from(JSON.stringify({ sub, exp })).toString("base64url")}.s`;
+const jwt = (sub: string, exp = Math.floor(Date.now() / 1000) + 600, iat?: number) =>
+  `h.${Buffer.from(JSON.stringify({ sub, exp, ...(iat === undefined ? {} : { iat }) })).toString("base64url")}.s`;
 /** A real, well-formed challenge for this user, but signed by a key that is not the pinned one. */
 const forgedChallenge = () =>
   WebAuth.buildChallengeTx(Keypair.random(), user.publicKey(), LINK_PIN.homeDomain, 300, Networks.PUBLIC, LINK_PIN.homeDomain);
@@ -235,12 +235,12 @@ test("cash-out status says when the partner is ready to be paid, without handing
   world({ extra: withdrawal({ status: "incomplete" }) });
   const token = jwt(s.address);
   assert.deepEqual(await cashOutStatus(s, { id: "w-1", from: R, partnerToken: token }), {
-    id: "w-1", state: "waiting_for_you", message: "Enter your bank account on the partner's page to continue. Nothing has left your wallet.", currency: "USDC", send: null, fee: null, readyToPay: false, txRef: null,
+    id: "w-1", state: "waiting_for_you", message: "Enter your bank account on the partner's page to continue. Nothing has left your wallet.", currency: "USDC", send: null, fee: null, receive: null, readyToPay: false, txRef: null,
   });
   assert.equal(await cashOutPayment(s, { id: "w-1", from: R, partnerToken: token }), null);
   world({ extra: withdrawal(ready) });
   const st = await cashOutStatus(s, { id: "w-1", from: R, partnerToken: token });
-  assert.deepEqual(st, { id: "w-1", state: "waiting_for_you", message: "The partner is ready. Approve the payment from your wallet to finish the cash-out.", currency: "USDC", send: 25_00, fee: 50, readyToPay: true, txRef: null });
+  assert.deepEqual(st, { id: "w-1", state: "waiting_for_you", message: "The partner is ready. Approve the payment from your wallet to finish the cash-out.", currency: "USDC", send: 25_00, fee: null, receive: null, readyToPay: true, txRef: null });
   assert.ok(!JSON.stringify(st).includes(PARTNER_ACCOUNT));
   // A top-up id is not a cash-out.
   world({ extra: (url) => (url.pathname === "/sep24/transaction" ? Response.json({ transaction: { id: "w-1", kind: "deposit", status: "completed" } }) : undefined) });
@@ -259,10 +259,10 @@ test("the payment handed to the money code is exact, and odd-looking ones are re
     destination: PARTNER_ACCOUNT,
     memo: "774411",
     memoType: "id",
+    // The dollar service didn't say what the fee is in, so it isn't shown as dollars.
+    fee: null,
+    receive: null,
   });
-  // No partner session, or one for someone else: nothing to pay.
-  assert.equal(await cashOutPayment(s, { id: "w-1", from: R }), null);
-  assert.equal(await cashOutPayment(s, { id: "w-1", from: R, partnerToken: jwt(Keypair.random().publicKey()) }), null);
   for (const bad of [
     { withdraw_anchor_account: s.address }, // pays the user's own wallet
     { withdraw_anchor_account: "not-an-address" },
@@ -274,4 +274,103 @@ test("the payment handed to the money code is exact, and odd-looking ones are re
     world({ extra: withdrawal({ ...ready, ...bad }) });
     await assert.rejects(cashOutPayment(s, { id: "w-1", from: R, partnerToken: token }), fails("BAD_REQUEST", /can't be reached/), JSON.stringify(bad));
   }
+});
+
+// ---------- Stage 3 prep: the sign-in for a payment, and the partner's fee ----------
+
+const { closingSoon } = await import("./link");
+const N = "NGN" as const;
+const nairaReady = { status: "pending_user_transfer_start", amount_in: "10000.00", withdraw_anchor_account: PARTNER_ACCOUNT, withdraw_memo: "774411", withdraw_memo_type: "id" };
+/** The test partner's challenge isn't signed by the pinned key, so a sign-in that starts ends in "can't be reached". What matters is whether one was asked for. */
+const askedToSignIn = () => calls.some((c) => c.endsWith("/auth"));
+const readTransfer = () => calls.some((c) => c.endsWith("/sep24/transaction"));
+
+test("a sign-in close to its end is renewed before a payment starts: under ten minutes, or under half of a short one", () => {
+  const now = 1_800_000_000;
+  const day = 24 * 60 * 60;
+  assert.equal(closingSoon({ issuedAt: now - day + 3600, expiresAt: now + 3600 }, now), false);
+  assert.equal(closingSoon({ issuedAt: now - day + 601, expiresAt: now + 601 }, now), false);
+  assert.equal(closingSoon({ issuedAt: now - day + 599, expiresAt: now + 599 }, now), true);
+  // A 4-minute sign-in: fine for its first half, so it can't be asked for on every try.
+  assert.equal(closingSoon({ issuedAt: now - 60, expiresAt: now + 180 }, now), false);
+  assert.equal(closingSoon({ issuedAt: now, expiresAt: now + 240 }, now), false);
+  assert.equal(closingSoon({ issuedAt: now - 130, expiresAt: now + 110 }, now), true);
+  // The token doesn't say when it was issued: used until it expires.
+  assert.equal(closingSoon({ issuedAt: null, expiresAt: now + 5 }, now), false);
+});
+
+test("a payment with no sign-in, someone else's, or one about to end asks for a new sign-in before reading anything", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  for (const partnerToken of [undefined, jwt(Keypair.random().publicKey()), jwt(s.address, now - 1), jwt(s.address, now + 300, now - 86_100)]) {
+    world({ extra: withdrawal(ready) });
+    await assert.rejects(cashOutPayment(s, { id: "w-1", from: R, partnerToken }), fails("BAD_REQUEST", /can't be reached/));
+    assert.ok(askedToSignIn(), "a sign-in challenge was requested");
+    assert.ok(!readTransfer(), "the cash-out was not read with a bad sign-in");
+  }
+  // A day-long sign-in with hours left goes straight through.
+  world({ extra: withdrawal(ready) });
+  assert.ok(await cashOutPayment(s, { id: "w-1", from: R, partnerToken: jwt(s.address, now + 3600, now - 82_800) }));
+  assert.ok(!askedToSignIn());
+});
+
+test("when the partner refuses the sign-in itself, a new sign-in is asked for; other errors and a brand-new sign-in are not", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const old = jwt(s.address, now + 3600, now - 3600);
+  const refusedWith = (status: number): Reply => (url) => (url.pathname === "/sep24/transaction" ? Response.json({ error: "no" }, { status }) : undefined);
+  for (const status of [401, 403]) {
+    for (const call of [cashOutPayment, cashOutStatus]) {
+      world({ extra: refusedWith(status) });
+      await assert.rejects(call(s, { id: "w-1", from: R, partnerToken: old }), fails("BAD_REQUEST", /can't be reached/));
+      assert.ok(readTransfer() && askedToSignIn(), `${status}: read, then a new sign-in`);
+    }
+    world({ extra: refusedWith(status) });
+    await assert.rejects(topUpStatus(s, { id: "w-1", receive: R, partnerToken: old }), fails("BAD_REQUEST", /can't be reached/));
+    assert.ok(askedToSignIn());
+  }
+  // A server error is not a sign-in problem.
+  world({ extra: refusedWith(500) });
+  await assert.rejects(cashOutPayment(s, { id: "w-1", from: R, partnerToken: old }), fails("BAD_REQUEST", /can't be reached/));
+  assert.ok(!askedToSignIn());
+  // Refused seconds after signing in: signing in again wouldn't help, so the wallet isn't asked in a loop.
+  world({ extra: refusedWith(401) });
+  await assert.rejects(cashOutPayment(s, { id: "w-1", from: R, partnerToken: jwt(s.address, now + 86_400, now - 5) }), fails("BAD_REQUEST", /can't be reached/));
+  assert.ok(!askedToSignIn());
+});
+
+test("naira cash-out: the fee and what reaches the bank come from the partner, on the payment and on the status", async () => {
+  const token = jwt(s.address);
+  const stellarNaira = `stellar:${LINK.NGN.asset.code}:${LINK.NGN.asset.issuer}`;
+  for (const feeAsset of [undefined, "iso4217:NGN", stellarNaira]) {
+    world({ extra: withdrawal({ ...nairaReady, amount_fee: "200.00", amount_out: "9800.00", ...(feeAsset ? { amount_fee_asset: feeAsset } : {}), amount_out_asset: "iso4217:NGN" }) });
+    const p = await cashOutPayment(s, { id: "w-1", from: N, partnerToken: token });
+    assert.ok(p && !("status" in p));
+    assert.deepEqual([p.amount, p.fee, p.receive], [10_000_00, 200_00, { amount: 9_800_00, currency: "NGN" }], String(feeAsset));
+    const st = await cashOutStatus(s, { id: "w-1", from: N, partnerToken: token });
+    assert.ok("state" in st);
+    assert.deepEqual([st.send, st.fee, st.receive, st.readyToPay], [10_000_00, 200_00, { amount: 9_800_00, currency: "NGN" }, true]);
+  }
+  // Nothing said yet: both stay empty, never guessed.
+  world({ extra: withdrawal(nairaReady) });
+  const bare = await cashOutPayment(s, { id: "w-1", from: N, partnerToken: token });
+  assert.ok(bare && !("status" in bare));
+  assert.deepEqual([bare.fee, bare.receive], [null, null]);
+  // A fee in something that isn't naira is left out, and a payout that isn't naira is not shown as naira.
+  world({ extra: withdrawal({ ...nairaReady, amount_fee: "0.15", amount_fee_asset: "iso4217:USD", amount_out: "6.00", amount_out_asset: "iso4217:USD" }) });
+  const odd = await cashOutPayment(s, { id: "w-1", from: N, partnerToken: token });
+  assert.ok(odd && !("status" in odd));
+  assert.deepEqual([odd.fee, odd.receive], [null, null]);
+});
+
+test("dollar cash-out: the fee shows only when the partner says it is in dollars; the bank amount is naira", async () => {
+  const token = jwt(s.address);
+  const stellarDollar = `stellar:${LINK_ASSET.code}:${LINK_ASSET.issuer}`;
+  world({ extra: withdrawal({ ...ready, amount_fee_asset: stellarDollar, amount_out: "38000.00", amount_out_asset: "iso4217:NGN" }) });
+  const p = await cashOutPayment(s, { id: "w-1", from: R, partnerToken: token });
+  assert.ok(p && !("status" in p));
+  assert.deepEqual([p.amount, p.fee, p.receive], [25_00, 50, { amount: 38_000_00, currency: "NGN" }]);
+  // A naira fee on a dollar cash-out is never shown as dollars.
+  world({ extra: withdrawal({ ...ready, amount_fee: "200.00", amount_fee_asset: "iso4217:NGN", amount_out: "38000.00" }) });
+  const q = await cashOutPayment(s, { id: "w-1", from: R, partnerToken: token });
+  assert.ok(q && !("status" in q));
+  assert.deepEqual([q.fee, q.receive], [null, { amount: 38_000_00, currency: "NGN" }]);
 });

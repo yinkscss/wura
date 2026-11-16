@@ -126,7 +126,10 @@ export type CashOutStatus = {
   currency: RampCurrency;
   /** What the wallet has to send, once the partner says. Minor units of `currency`. */
   send: number | null;
+  /** The partner's fee, minor units of `currency`. null when it doesn't say, or charges it in something else. */
   fee: number | null;
+  /** What reaches the bank account, in naira (kobo), once the partner says. */
+  receive: { amount: number; currency: "NGN" } | null;
   /**
    * True once the partner is waiting for the wallet's payment. The payment is
    * a money move: it needs the user's approval and goes through the limit

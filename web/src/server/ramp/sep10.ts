@@ -137,7 +137,8 @@ export function signChallenge(input: {
   return tx.toXDR();
 }
 
-export type AnchorToken = { token: string; expiresAt: number };
+/** Unix seconds. `issuedAt` is null when the anchor's token doesn't say (SEP-10 says it should). */
+export type AnchorToken = { token: string; expiresAt: number; issuedAt: number | null };
 
 /** Sends the signed challenge back and returns the anchor's session token. */
 export async function exchangeChallenge(input: {
@@ -173,7 +174,7 @@ export async function exchangeChallenge(input: {
  */
 export function readAnchorToken(token: string, account: string, nowSec = Math.floor(Date.now() / 1000)): AnchorToken {
   const part = token.split(".")[1];
-  let claims: { sub?: unknown; exp?: unknown };
+  let claims: { sub?: unknown; exp?: unknown; iat?: unknown };
   try {
     claims = JSON.parse(Buffer.from(part ?? "", "base64url").toString("utf8"));
   } catch {
@@ -184,5 +185,6 @@ export function readAnchorToken(token: string, account: string, nowSec = Math.fl
   if (sub !== account) throw new ChallengeError("The anchor's session token is for a different account.");
   const exp = typeof claims.exp === "number" ? claims.exp : 0;
   if (exp <= nowSec) throw new ChallengeError("The anchor's session token has already expired.");
-  return { token, expiresAt: exp };
+  const iat = typeof claims.iat === "number" && claims.iat > 0 && claims.iat < exp ? claims.iat : null;
+  return { token, expiresAt: exp, issuedAt: iat };
 }

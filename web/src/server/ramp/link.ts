@@ -3,10 +3,10 @@ import { Networks, StrKey } from "@stellar/stellar-sdk";
 import { ApiFailure } from "../errors";
 import type { Session } from "../session";
 import { loadAnchor, type AnchorEndpoints, type AnchorPin } from "./sep1";
-import { ChallengeError, checkChallenge, exchangeChallenge, fetchChallenge, readAnchorToken, signChallenge } from "./sep10";
+import { ChallengeError, checkChallenge, exchangeChallenge, fetchChallenge, readAnchorToken, signChallenge, type AnchorToken } from "./sep10";
 import { statusMessage } from "./messages";
 import { recordTransfer, saveStatus, type TransferKind } from "./records";
-import { getInfo, getTransfer, startInteractive, toMinor, type Sep24Info, type TransferStatus } from "./sep24";
+import { getInfo, getTransfer, Sep24Error, startInteractive, toMinor, type Sep24Info, type TransferStatus } from "./sep24";
 import type { PartnerSignIn, RampCurrency, RampProvider } from "./types";
 
 /**
@@ -115,14 +115,67 @@ async function signInStart(s: Session, receive: RampCurrency): Promise<PartnerSi
   }
 }
 
-/** The partner session, if it is for this wallet and still valid. */
-function usable(token: string | undefined, account: string) {
+/** The partner session's claims, if it is for this wallet and still valid. */
+function session(token: string | undefined, account: string): AnchorToken | null {
   if (!token) return null;
   try {
-    return readAnchorToken(token, account).token;
+    return readAnchorToken(token, account);
   } catch {
     return null;
   }
+}
+
+/** The partner session, if it is for this wallet and still valid. */
+function usable(token: string | undefined, account: string) {
+  return session(token, account)?.token ?? null;
+}
+
+/**
+ * True when a partner sign-in is too close to its end to start paying a
+ * cash-out with: less than ten minutes left, or less than half its lifetime
+ * if that is shorter. A payment takes three steps (preview, approve, submit),
+ * and the sign-in must not lapse between them. The half-lifetime rule stops a
+ * short-lived sign-in from being asked for again on every try. A token that
+ * doesn't say when it was issued is used until it expires.
+ */
+export function closingSoon(t: { expiresAt: number; issuedAt: number | null }, nowSec = Math.floor(Date.now() / 1000)) {
+  if (t.issuedAt === null) return false;
+  const window = Math.min(10 * 60, (t.expiresAt - t.issuedAt) / 2);
+  return t.expiresAt - nowSec < window;
+}
+
+/**
+ * True when the partner refused the sign-in itself (401 or 403), so signing in
+ * again can help. Not when the sign-in is under two minutes old: then signing
+ * in again wouldn't change the answer, and asking would loop.
+ */
+function signInRefused(err: unknown, t: AnchorToken, nowSec = Math.floor(Date.now() / 1000)) {
+  if (!(err instanceof Sep24Error) || (err.status !== 401 && err.status !== 403)) return false;
+  return t.issuedAt === null || nowSec - t.issuedAt >= 120;
+}
+
+/** SEP-38 name of the token a service's wallet side uses, e.g. "stellar:NGNC:G…". */
+const stellarName = (service: RampCurrency) => `stellar:${LINK[service].asset.code}:${LINK[service].asset.issuer}`;
+
+/**
+ * The partner's fee for a cash-out, in the currency that leaves the wallet, or
+ * null when it can't be shown in that currency. Naira service: the fee is
+ * naira whether the partner names the token, the currency, or nothing.
+ * Dollar service: only when the partner says the fee is in the dollar token;
+ * otherwise it may be naira, and the two are never mixed.
+ */
+function feeIn(service: RampCurrency, t: TransferStatus): number | null {
+  if (t.fee === null) return null;
+  if (t.feeAsset === stellarName(service)) return t.fee;
+  if (service === "NGN" && (t.feeAsset === null || t.feeAsset === "iso4217:NGN")) return t.fee;
+  return null;
+}
+
+/** What reaches the bank account, in naira. null until the partner says, or if it names anything but naira. */
+function bankAmount(t: TransferStatus): { amount: number; currency: "NGN" } | null {
+  if (t.amountOut === null || t.amountOut <= 0) return null;
+  if (t.amountOutAsset !== null && t.amountOutAsset !== "iso4217:NGN") return null;
+  return { amount: t.amountOut, currency: "NGN" };
 }
 
 /**
@@ -190,7 +243,14 @@ export async function readLinkTransfer(input: { service: RampCurrency; account: 
   const token = usable(input.token, input.account);
   if (!token) return null;
   const { anchor } = await linkAnchor(input.service);
-  const t = await getTransfer({ transferServer: anchor.transferServer, token, id: input.id });
+  let t: TransferStatus;
+  try {
+    t = await getTransfer({ transferServer: anchor.transferServer, token, id: input.id });
+  } catch (err) {
+    // The partner no longer accepts this sign-in: the same as having none.
+    if (err instanceof Sep24Error && (err.status === 401 || err.status === 403)) return null;
+    throw err;
+  }
   if ((t.kind === "deposit") !== (input.kind === "topup")) throw new Error("the partner answered for a different kind of transfer");
   return t;
 }
@@ -259,15 +319,16 @@ export const linkRamp: RampProvider = {
   },
 
   async topUpStatus(s, { id, receive, partnerToken }) {
-    const token = usable(partnerToken, s.address);
-    if (!token) return signInStart(s, receive);
+    const signedIn = session(partnerToken, s.address);
+    if (!signedIn) return signInStart(s, receive);
     const { anchor } = await linkAnchor(receive);
     try {
-      const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
+      const t = await getTransfer({ transferServer: anchor.transferServer, token: signedIn.token, id });
       if (t.kind !== "deposit") throw new Error("not a top-up");
       await keep(receive, t);
       return { id, state: t.state, message: statusMessage("topup", t.anchorStatus), currency: receive, received: t.amountOut, fee: t.fee, txRef: t.stellarTxId };
     } catch (err) {
+      if (signInRefused(err, signedIn)) return signInStart(s, receive);
       unreachable(err);
     }
   },
@@ -297,25 +358,38 @@ export const linkRamp: RampProvider = {
   },
 
   async cashOutStatus(s, { id, from, partnerToken }) {
-    const token = usable(partnerToken, s.address);
-    if (!token) return signInStart(s, from);
+    const signedIn = session(partnerToken, s.address);
+    if (!signedIn) return signInStart(s, from);
     const { anchor } = await linkAnchor(from);
     try {
-      const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
+      const t = await getTransfer({ transferServer: anchor.transferServer, token: signedIn.token, id });
       if (t.kind !== "withdrawal") throw new Error("not a cash-out");
       await keep(from, t);
-      return { id, state: t.state, message: statusMessage("cashout", t.anchorStatus), currency: from, send: t.amountIn, fee: t.fee, readyToPay: t.payTo !== null, txRef: t.stellarTxId };
+      return {
+        id,
+        state: t.state,
+        message: statusMessage("cashout", t.anchorStatus),
+        currency: from,
+        send: t.amountIn,
+        fee: feeIn(from, t),
+        receive: bankAmount(t),
+        readyToPay: t.payTo !== null,
+        txRef: t.stellarTxId,
+      };
     } catch (err) {
+      if (signInRefused(err, signedIn)) return signInStart(s, from);
       unreachable(err);
     }
   },
 
   async cashOutPayment(s, { id, from, partnerToken }) {
-    const token = usable(partnerToken, s.address);
-    if (!token) return null;
+    // A payment is three steps. Ask for the sign-in now if it is missing or
+    // about to end, so it can't lapse between approve and submit.
+    const signedIn = session(partnerToken, s.address);
+    if (!signedIn || closingSoon(signedIn)) return signInStart(s, from);
     const { anchor, info } = await linkAnchor(from);
     try {
-      const t = await getTransfer({ transferServer: anchor.transferServer, token, id });
+      const t = await getTransfer({ transferServer: anchor.transferServer, token: signedIn.token, id });
       if (t.kind !== "withdrawal" || !t.payTo) return null;
       const { account, memo, memoType } = t.payTo;
       const { min, max } = info.withdraw;
@@ -325,8 +399,20 @@ export const linkRamp: RampProvider = {
       if (!memo || memo.length > 64) throw new Error("bad cash-out memo");
       if (t.amountIn === null || t.amountIn <= 0) throw new Error("cash-out has no amount");
       if ((min !== null && t.amountIn < min) || (max !== null && t.amountIn > max)) throw new Error("cash-out amount outside the partner's limits");
-      return { id, network: "mainnet", currency: from, asset: LINK[from].asset, amount: t.amountIn, destination: account, memo, memoType };
+      return {
+        id,
+        network: "mainnet",
+        currency: from,
+        asset: LINK[from].asset,
+        amount: t.amountIn,
+        destination: account,
+        memo,
+        memoType,
+        fee: feeIn(from, t),
+        receive: bankAmount(t),
+      };
     } catch (err) {
+      if (signInRefused(err, signedIn)) return signInStart(s, from);
       unreachable(err);
     }
   },
