@@ -69,9 +69,6 @@ export default function TermsPage() {
       <div>
         <Link href="/" className="text-[13px] font-semibold text-muted hover:text-blue">← Wura</Link>
         <h1 className="mt-4 text-[34px] font-bold leading-tight tracking-[-0.04em]">Terms and risks</h1>
-        <p className="mt-3 rounded-2xl bg-mist px-4 py-3 text-[13.5px] leading-relaxed text-muted">
-          Draft for the invite-only beta. It has not been reviewed by a lawyer yet, and it will change before real money is opened to anyone outside the build team.
-        </p>
       </div>
       {sections.map((s) => (
         <section key={s.h} className="flex flex-col gap-2">
