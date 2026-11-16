@@ -312,7 +312,11 @@ function SignInScreen({ handlers }: { handlers: Handlers }) {
                   <p className="text-[12.5px] leading-relaxed text-soft">
                     {handlers.mock
                       ? "Mock mode: no email is sent, and any 6-digit code works. Set NEXT_PUBLIC_PRIVY_APP_ID to use real email codes."
-                      : "Codes are sent by Privy. By continuing you agree to create a wallet linked to this email."}
+                      : "Codes are sent by Privy. By continuing you agree to create a wallet linked to this email, and you've read the "}
+                    {!handlers.mock && (
+                      <Link href="/terms" className="font-semibold underline underline-offset-2">Terms and risks</Link>
+                    )}
+                    {!handlers.mock && "."}
                   </p>
                 </motion.form>
               )}
