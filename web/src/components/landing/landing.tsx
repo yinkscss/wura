@@ -14,9 +14,9 @@ import {
   SwapIcon,
   WalletIcon,
 } from "../icons";
-import { ChatGPTLogo, ClaudeLogo, TelegramLogo, WhatsAppLogo } from "../brand-icons";
 import { Starfield } from "../starfield";
 import { ButtonLink, Wordmark, buttonClass, cx } from "../ui";
+import { ChannelCards } from "./channel-cards";
 import { HeroArc, HeroCardsMobile } from "./hero-arc";
 import { HeroHeadlineCoins, HeroMobilePeek, HeroStickers } from "./hero-stickers";
 import { HowDemo } from "./how-demo";
@@ -258,14 +258,6 @@ const SAFETY = [
   { icon: ChatIcon, title: "Everything is logged", body: "Every swap, send and link goes into a log you can check." },
 ];
 
-// Same brand tiles as the in-app channels list (wallet-parts.tsx).
-const CHANNELS = [
-  { name: "Claude", how: "Chat plugin", tile: "bg-[#D97757]", Logo: ClaudeLogo },
-  { name: "ChatGPT", how: "Chat plugin", tile: "bg-[#10A37F]", Logo: ChatGPTLogo },
-  { name: "Telegram", how: "Bot", tile: "bg-[#26A5E4]", Logo: TelegramLogo },
-  { name: "WhatsApp", how: "Bot", tile: "bg-[#25D366]", Logo: WhatsAppLogo },
-];
-
 export function Landing() {
   return (
     <div className="overflow-x-clip bg-white text-blue">
@@ -372,7 +364,7 @@ export function Landing() {
         id="channels"
         eyebrow="Channels"
         title="One assistant, wherever you chat."
-        sub="Same wallet, same limits and the same yes-before-anything rule in every app. The web app comes first; the chat apps are next."
+        sub="Same wallet, same limits and the same yes-before-anything rule in every app. Claude, ChatGPT and Telegram work today; WhatsApp is next."
         className="bg-page"
         stickers={
           <>
@@ -382,22 +374,7 @@ export function Landing() {
           </>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {CHANNELS.map((c, i) => (
-            <Reveal key={c.name} delay={i * 0.07}>
-              <motion.div whileHover={{ y: -6, rotate: i % 2 ? 1 : -1 }} className="flex flex-col gap-5 rounded-card bg-white p-6 shadow-card">
-                <span className={cx("grid size-12 place-items-center rounded-2xl text-white", c.tile)}>
-                  <c.Logo size={24} />
-                </span>
-                <div>
-                  <div className="text-[20px] font-bold tracking-[-0.03em]">{c.name}</div>
-                  <div className="text-[14px] text-muted">{c.how} · same assistant</div>
-                </div>
-                <span className="w-fit rounded-full bg-blue/[0.07] px-3 py-1 text-[11.5px] font-bold uppercase tracking-[0.06em]">Coming next</span>
-              </motion.div>
-            </Reveal>
-          ))}
-        </div>
+        <ChannelCards />
       </Section>
 
       <section className="relative overflow-hidden px-5 pb-44 pt-24 text-center text-white sm:px-10 md:pb-24" style={{ background: "linear-gradient(180deg,#061A58 0%,#08318D 45%,#1E6AE8 100%)" }}>
