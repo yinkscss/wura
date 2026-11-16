@@ -130,3 +130,13 @@ test("the response is capped and non-text content is refused", async () => {
     /isn't a web page/,
   );
 });
+
+test("a real socket connecting to a name that resolves to loopback is stopped by the lookup guard", async () => {
+  const net = await import("node:net");
+  const err = await new Promise<Error>((resolve) => {
+    const sock = net.connect({ host: "localhost", port: 9, lookup: guardedLookup() as never });
+    sock.on("error", (e) => resolve(e));
+    sock.on("connect", () => resolve(new Error("connected")));
+  });
+  assert.ok(err instanceof FetchRefused || /private address/.test(err.message), err.message);
+});

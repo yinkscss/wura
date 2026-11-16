@@ -9,6 +9,7 @@ This is a scoped stretch skill, not one of the three core buildathon demo skills
 Before Wura connects to any new site, it always asks first: “Connect to this site?” It also offers to add that site to your allow list.
 
 - Allowlisted sites skip the “Connect to this site?” question the next time.
+- If you say yes without adding the site to the list, that yes lasts 30 minutes for that site, so the follow-up steps of the same request don't ask again.
 - Every payment or signature still needs your approval, even on an allowlisted site. The allow list is only permission to connect, not permission to sign.
 - You can remove a site from the list at any time.
 

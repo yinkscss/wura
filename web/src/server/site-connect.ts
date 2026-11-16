@@ -254,7 +254,7 @@ export function requestSiteConnect(s: Session, input: { url: string; want?: stri
     // Real sites go through the model: it reads the contract's function list and chooses the call.
     throw new ApiFailure(
       "SIGNING_UNAVAILABLE",
-      "Connecting to real sites needs the AI model, because it has to read the site's contract and pick the call. It isn't switched on here, so I stopped. Nothing was sent.",
+      "I couldn't finish reading that site. Real sites need the AI model to pick the contract call, and it either isn't switched on or didn't answer in time. Nothing was sent. Try again.",
       503,
     );
   }
