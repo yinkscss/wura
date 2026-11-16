@@ -21,7 +21,7 @@ export type CardPreview = {
   amount: string; // "10.00"
   fee: string; // "0.00"
   total: string;
-  network: "testnet" | "mock";
+  network: "testnet" | "mainnet" | "mock";
   dailyLeftAfter: string;
   perPaymentCap: string;
   expiresAt: number;
@@ -126,11 +126,11 @@ export function sendPreviewCardHtml(baseUrl: string, opts: { demo?: CardPreview 
   function render(data){
     p = data;
     $("loading").classList.add("hide"); $("body").classList.remove("hide");
-    $("net").textContent = data.network === "testnet" ? "Testnet" : "Example";
+    $("net").textContent = data.network === "mainnet" ? "Mainnet" : data.network === "testnet" ? "Testnet" : "Example";
     $("amt").textContent = data.amount;
     $("av").textContent = (data.to || "?").trim().charAt(0).toUpperCase();
     $("to").textContent = data.to; $("addr").textContent = short(data.toAddress);
-    $("fee").textContent = data.network === "testnet" ? "test XLM" : data.fee + " USDC";
+    $("fee").textContent = data.network !== "mock" ? "network fee in XLM" : data.fee + " USDC";
     $("total").textContent = data.total + " USDC";
     $("left").textContent = data.dailyLeftAfter + " USDC";
     $("cap").textContent = data.perPaymentCap + " USDC";

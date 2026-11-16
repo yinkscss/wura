@@ -1,6 +1,6 @@
 import "server-only";
 import { Asset, BASE_FEE, Horizon, Keypair, Memo, Operation, StrKey, TransactionBuilder, type Transaction } from "@stellar/stellar-sdk";
-import { config } from "./config";
+import { config, moneyKilled, moneyLive } from "./config";
 import { ApiFailure } from "./errors";
 
 /**
@@ -8,6 +8,13 @@ import { ApiFailure } from "./errors";
  * Amounts are handled in cents (2 decimals) and converted to Stellar's
  * 7-decimal strings here.
  */
+
+/** The kill switch (MONEY_KILL=1). Every build and submit passes through here, so real money stops without a deploy. */
+export function assertMoneyOn() {
+  if (moneyLive() && moneyKilled()) {
+    throw new ApiFailure("MONEY_PAUSED", "Payments are paused right now. Nothing was sent. Try again later.", 503);
+  }
+}
 
 const server = () => new Horizon.Server(config.horizonUrl);
 
@@ -59,6 +66,9 @@ export async function getAccountStatus(address: string): Promise<AccountStatus> 
 
 /** Testnet only: creates and funds the account with test XLM. */
 export async function fundWithFriendbot(address: string) {
+  if (config.stellarNetwork !== "testnet" || !config.friendbotUrl) {
+    throw new ApiFailure("BAD_REQUEST", "There is no test faucet on mainnet.", 400);
+  }
   const res = await fetch(`${config.friendbotUrl}/?addr=${encodeURIComponent(address)}`, { cache: "no-store" });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -74,11 +84,12 @@ export type BuiltTx = { xdr: string; hash: string };
 type Op = ReturnType<typeof Operation.payment> | ReturnType<typeof Operation.changeTrust> | ReturnType<typeof Operation.setOptions>;
 
 async function build(source: string, op: Op, memo?: string): Promise<BuiltTx> {
+  assertMoneyOn();
   let account;
   try {
     account = await server().loadAccount(source);
   } catch (err) {
-    if (isNotFound(err)) throw new ApiFailure("BAD_REQUEST", "Your wallet isn't set up on testnet yet. Set it up first.", 409);
+    if (isNotFound(err)) throw new ApiFailure("BAD_REQUEST", `Your wallet isn't set up on ${config.stellarNetwork} yet. Set it up first.`, 409);
     throw networkError(err);
   }
   const b = new TransactionBuilder(account, { fee: String(Number(BASE_FEE) * 2), networkPassphrase: config.networkPassphrase })
@@ -177,6 +188,7 @@ export function attachSignature(xdr: string, address: string, signatureHex: stri
 
 /** Submits and returns the transaction hash, or throws a plain-language error. */
 export async function submit(tx: Transaction): Promise<string> {
+  assertMoneyOn();
   try {
     const res = await server().submitTransaction(tx);
     return res.hash;
@@ -192,7 +204,7 @@ function isNotFound(err: unknown) {
 
 function networkError(err: unknown) {
   console.error("horizon error", err);
-  return new ApiFailure("BAD_REQUEST", "Couldn't reach Stellar testnet. Nothing was sent. Try again in a moment.", 502);
+  return new ApiFailure("BAD_REQUEST", `Couldn't reach ${config.networkLabel}. Nothing was sent. Try again in a moment.`, 502);
 }
 
 function submitError(err: unknown) {
@@ -201,9 +213,9 @@ function submitError(err: unknown) {
   const op = codes?.operations?.[0];
   const txc = codes?.transaction;
   const msg: Record<string, string> = {
-    op_underfunded: "Your wallet doesn't have enough USDC for that on testnet.",
+    op_underfunded: `Your wallet doesn't have enough USDC for that on ${config.stellarNetwork}.`,
     op_no_trust: "The other account can't receive USDC yet: it has no USDC trustline.",
-    op_no_destination: "That account doesn't exist on testnet yet.",
+    op_no_destination: `That account doesn't exist on ${config.stellarNetwork} yet.`,
     op_line_full: "The other account can't hold that much USDC.",
     op_src_no_trust: "Your wallet isn't set up for USDC yet. Set it up first.",
     op_low_reserve: "Your wallet needs a little more XLM to do that.",

@@ -118,7 +118,7 @@ export type Me = {
   email: string;
   address: string;
   authMode: "privy" | "mock";
-  moneyMode: "mock" | "testnet";
+  moneyMode: "mock" | "testnet" | "mainnet";
   /** Who signs real testnet transactions. */
   signer: "mock" | "privy" | "server-dev";
   kycStatus: KycStatus;
@@ -127,7 +127,7 @@ export type Me = {
 /** Testnet wallet readiness (MONEY_MODE=testnet). */
 export type WalletStatus = {
   address: string;
-  network: "testnet";
+  network: "testnet" | "mainnet";
   exists: boolean;
   xlm: string;
   usdc: number | null;
@@ -164,7 +164,7 @@ export type ApiErrorCode =
   | "KYC_REQUIRED"
   | "TRIAL_LIMIT"
   | "BAD_REQUEST"
-  | "SIGNING_UNAVAILABLE"
+  | "SIGNING_UNAVAILABLE" | "MONEY_PAUSED"
   | "SITE_NOT_ALLOWED"
   | "SITE_UNSUPPORTED"
   | "CONTRACT_NOT_FOUND"

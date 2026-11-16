@@ -1,7 +1,7 @@
 import "server-only";
 import type { NeedsSignature, SendIntent, WalletStatus } from "@/lib/types";
 import { usdc } from "@/lib/format";
-import { config, serverDevSigning } from "./config";
+import { config, serverDevSigning, moneyLive } from "./config";
 import { devKeypairFor } from "./dev-keys";
 import { ApiFailure } from "./errors";
 import { checkLimits, log } from "./money";
@@ -35,7 +35,7 @@ export async function walletStatus(s: Session): Promise<WalletStatus> {
   const st = await getAccountStatus(s.address);
   return {
     address: s.address,
-    network: "testnet",
+    network: config.stellarNetwork,
     exists: st.exists,
     xlm: st.xlm,
     usdc: st.usdc,
@@ -61,6 +61,9 @@ export async function setupWallet(s: Session): Promise<{ status: "ready"; wallet
   const w = wallet(s.userId);
   let st = await getAccountStatus(s.address);
   if (!st.exists) {
+    if (config.stellarNetwork === "mainnet") {
+      throw new ApiFailure("BAD_REQUEST", "Your wallet needs to be activated first. Account setup arrives with sponsorship (M3).", 409);
+    }
     await fundWithFriendbot(s.address);
     st = await getAccountStatus(s.address);
     if (!st.exists) throw new ApiFailure("BAD_REQUEST", "Friendbot didn't create the account. Try again in a minute.", 502);
@@ -78,7 +81,7 @@ export async function setupWallet(s: Session): Promise<{ status: "ready"; wallet
 /** Validates a destination before showing a send preview. */
 export async function checkDestination(address: string, name: string) {
   const st = await getAccountStatus(address);
-  if (!st.exists) throw new ApiFailure("UNKNOWN_CONTACT", `${name}'s account doesn't exist on testnet yet.`, 404);
+  if (!st.exists) throw new ApiFailure("UNKNOWN_CONTACT", `${name}'s account doesn't exist on ${config.stellarNetwork} yet.`, 404);
   if (!st.hasTrustline) {
     throw new ApiFailure("UNKNOWN_CONTACT", `${name}'s account can't receive USDC yet: it has no USDC trustline.`, 409);
   }
@@ -166,10 +169,10 @@ export async function submitSigned(s: Session, input: { txId: string; signature:
 }
 
 export function refuseInTestnet(what: string) {
-  if (config.moneyMode === "testnet") {
+  if (moneyLive()) {
     throw new ApiFailure(
       "SIGNING_UNAVAILABLE",
-      `On testnet, only USDC sends are real so far. ${what} go live once real quotes are wired.`,
+      `On ${config.stellarNetwork}, only USDC sends are real so far. ${what} go live once real quotes are wired.`,
       409,
     );
   }

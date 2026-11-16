@@ -12,7 +12,7 @@ import type {
 } from "@/lib/types";
 import { money, naira, usdc } from "@/lib/format";
 import { chatApprovalsAvailable, chatApprovalStatus, sendWithAgentKey } from "./agent-key";
-import { config, serverDevSigning } from "./config";
+import { config, serverDevSigning, moneyLive } from "./config";
 import { ApiFailure } from "./errors";
 import { compareVenues, EXAMPLE_FEE_BPS, marketRate, quoteSource } from "./routing";
 import type { Session } from "./session";
@@ -100,7 +100,7 @@ export function log(w: WalletState, a: Omit<Activity, "id" | "at">) {
 // ---------- Reads ----------
 
 export async function getBalances(s: Session): Promise<Balances> {
-  if (config.moneyMode === "testnet") {
+  if (moneyLive()) {
     // Real USDC from Horizon. Naira isn't on testnet: the on-ramp isn't connected.
     const st = await getAccountStatus(s.address).catch(() => null);
     return { NGN: 0, USDC: st?.usdc ?? 0 };
@@ -309,15 +309,15 @@ export async function previewSend(s: Session, input: { to: string; amount: numbe
 
 /** Runs every check for a send and returns fresh numbers. Throws on any refusal. */
 async function sendFigures(s: Session, w: WalletState, contact: SendIntent["to"], asset: Currency, amount: number): Promise<Omit<SendIntent, "id">> {
-  const testnet = config.moneyMode === "testnet";
-  // On testnet the network fee is paid in test XLM, not USDC.
+  const testnet = moneyLive();
+  // With real money the network fee is paid in XLM, not USDC.
   const fee = testnet ? 0 : EXAMPLE_SEND_FEE;
   checkLimits(w, asset, amount);
   let balanceBefore = w.balances[asset];
   if (testnet) {
     balanceBefore = await usdcBalance(s);
     if (amount > balanceBefore) {
-      throw new ApiFailure("INSUFFICIENT_BALANCE", `You don't have enough USDC. Your testnet balance is ${usdc(balanceBefore)}.`, 403);
+      throw new ApiFailure("INSUFFICIENT_BALANCE", `You don't have enough USDC. Your balance is ${usdc(balanceBefore)}.`, 403);
     }
     if (contact.address === s.address) throw new ApiFailure("BAD_REQUEST", "That's your own wallet.");
     await checkDestination(contact.address, contact.name);
@@ -410,7 +410,7 @@ export async function createSend(s: Session, input: { intentId: string; approve:
   if (input.approve !== true) {
     throw new ApiFailure("NOT_APPROVED", "Nothing was sent. A payment only goes ahead when you confirm it.", 403);
   }
-  if (config.moneyMode === "testnet") {
+  if (moneyLive()) {
     if (input.via === "chat") {
       // Agent key when the user turned chat approvals on; the server's dev key
       // (TESTNET_SIGNER=server-dev) also works without a browser.

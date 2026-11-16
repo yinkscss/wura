@@ -1,7 +1,7 @@
 import "server-only";
 import type { AgentCard, Currency, Quote } from "@/lib/types";
 import { money, naira, rate, usdc } from "@/lib/format";
-import { config } from "./config";
+import { config, moneyLive } from "./config";
 import type { ToolSpec } from "./llm";
 import { ApiFailure } from "./errors";
 import { createPaymentLink, getActivity, getBalances, getLimits, getQuote, listContacts, precheckSwap, previewSend, saveContact } from "./money";
@@ -116,8 +116,8 @@ function quoteFacts(q: Quote) {
 }
 
 const SWAP_NOTE =
-  config.moneyMode === "testnet"
-    ? "This app is on Stellar testnet: swaps aren't live yet, so approving this quote will be refused. Sends are real testnet USDC."
+  moneyLive()
+    ? `This app is on ${config.networkLabel}: swaps aren't live yet, so approving this quote will be refused.`
     : "Mock mode: approving simulates the swap; nothing is broadcast.";
 
 async function run(s: Session, name: string, input: Record<string, unknown>): Promise<ToolOutcome> {
@@ -146,7 +146,7 @@ async function run(s: Session, name: string, input: Record<string, unknown>): Pr
           amount: usdc(intent.amount),
           fee: usdc(intent.fee),
           total: usdc(intent.total),
-          network: config.moneyMode === "testnet" ? "Stellar testnet (real test USDC)" : "mock (nothing is broadcast)",
+          network: moneyLive() ? `${config.networkLabel} (${config.moneyMode === "mainnet" ? "real USDC" : "real test USDC"})` : "mock (nothing is broadcast)",
           shown_to_user: "send preview card with Confirm and Cancel buttons; nothing is sent until they confirm",
         }),
         isError: false,
@@ -192,7 +192,7 @@ async function run(s: Session, name: string, input: Record<string, unknown>): Pr
       const limits = getLimits(s);
       return {
         content: JSON.stringify({
-          network: config.moneyMode === "testnet" ? "Stellar testnet" : "mock",
+          network: moneyLive() ? config.networkLabel : "mock",
           naira: naira(balances.NGN),
           usdc: usdc(balances.USDC),
           can_still_spend_today: { naira: naira(limits.remainingToday.NGN), usdc: usdc(limits.remainingToday.USDC) },

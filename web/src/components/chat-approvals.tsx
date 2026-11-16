@@ -20,7 +20,7 @@ export function ChatApprovalsCard() {
   const [status, setStatus] = useState<ChatApprovalStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const testnet = data?.me.moneyMode === "testnet";
+  const testnet = data?.me.moneyMode !== "mock";
 
   const load = useCallback(async () => {
     try {

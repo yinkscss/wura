@@ -145,7 +145,7 @@ export function Chat() {
       if (res.mock) {
         say(`Sent ${usdc(intent.amount)} to ${intent.to.name}. Reference ${res.activity.txRef} (mock — nothing was broadcast).`);
       } else {
-        say(`Sent ${usdc(intent.amount)} to ${intent.to.name} on Stellar testnet.`, undefined, res.activity.explorerUrl);
+        say(`Sent ${usdc(intent.amount)} to ${intent.to.name} on Stellar${data?.me.moneyMode === "testnet" ? " testnet" : ""}.`, undefined, res.activity.explorerUrl);
       }
       if (intent.to.saved === false) {
         say("Want to save this address? Then next time you can just say “send to” and their name.", {
@@ -255,7 +255,7 @@ export function Chat() {
                 <h1 className="text-[24px] font-bold tracking-[-0.03em]">What do you want to do?</h1>
                 <p className="mx-auto mt-1.5 max-w-[420px] text-[14.5px] text-muted">
                   I compare rates, show you a preview, and only move money when you approve.{" "}
-                  {data?.me.moneyMode === "testnet" ? "Stellar testnet: sends use test USDC." : "Example data, mock mode."}
+                  {data?.me.moneyMode !== "mock" ? data?.me.moneyMode === "mainnet" ? "Stellar mainnet: sends move real USDC." : "Stellar testnet: sends use test USDC." : "Example data, mock mode."}
                 </p>
               </div>
             </motion.div>

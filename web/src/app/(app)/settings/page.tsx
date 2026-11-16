@@ -29,7 +29,7 @@ export default function SettingsPage() {
     ? [
         ["Email", data.me.email],
         ["Sign-in", data.me.authMode === "privy" ? "Email code (Privy)" : "Mock sign-in"],
-        ["Money", data.me.moneyMode === "mock" ? "Mock: nothing is signed or broadcast" : "Stellar testnet"],
+        ["Money", data.me.moneyMode === "mock" ? "Mock: nothing is signed or broadcast" : data.me.moneyMode === "mainnet" ? "Stellar mainnet (real money)" : "Stellar testnet"],
         ["Naira identity check", data.me.kycStatus === "verified" ? "Passed (number not stored)" : "Not done yet"],
       ]
     : [];

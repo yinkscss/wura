@@ -6,7 +6,7 @@ import { naira, usdc } from "@/lib/format";
 import type { Currency } from "@/lib/types";
 import { chatApprovalStatus, chatApprovalsAvailable } from "./agent-key";
 import { approveSendFromChat } from "./channel";
-import { config, serverDevSigning } from "./config";
+import { config, serverDevSigning, moneyLive } from "./config";
 import { ApiFailure } from "./errors";
 import { sendPreviewCardHtml, type CardPreview } from "./mcp-card";
 import { openPreviewCount } from "./money";
@@ -132,12 +132,12 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string, opts: 
         const out = await runTool(s, "preview_send", { to, amount_usdc });
         if (out.isError || out.card?.type !== "send") return refusal(out);
         const i = out.card.intent;
-        const testnet = config.moneyMode === "testnet";
+        const testnet = moneyLive();
         const text = reply(
           [
             `Prepared, not sent: ${usdc(i.amount)} to ${i.to.saved ? `${i.to.name} (${short(i.to.address)})` : short(i.to.address)}.`,
-            i.fee ? `Fee ${usdc(i.fee)}, total ${usdc(i.total)}.` : "Network fee is paid in test XLM.",
-            `Network: ${testnet ? "Stellar testnet (real test USDC)" : "mock (nothing is broadcast)"}.`,
+            i.fee ? `Fee ${usdc(i.fee)}, total ${usdc(i.total)}.` : "The network fee is paid in XLM.",
+            `Network: ${testnet ? `${config.networkLabel} (${config.moneyMode === "mainnet" ? "real USDC" : "real test USDC"})` : "mock (nothing is broadcast)"}.`,
             `To send it, the user opens this link, signs in to Wura and confirms: ${approveUrl(i.id)}`,
             "If the link is opened after a minute, Wura checks everything again and shows fresh numbers before they confirm.",
             i.to.saved === false ? "This address isn't in their favourites. After it goes through they can save it with a name." : "",
@@ -155,7 +155,7 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string, opts: 
           (wallet(s.userId).cardCodes ??= {})[i.id] = sha256(code).toString("hex");
         });
         const inChat =
-          config.moneyMode !== "testnet" || serverDevSigning() || (chatApprovalsAvailable() && (await chatApprovalStatus(s).catch(() => null))?.active === true);
+          !moneyLive() || serverDevSigning() || (chatApprovalsAvailable() && (await chatApprovalStatus(s).catch(() => null))?.active === true);
         const data: CardPreview = {
           intentId: i.id,
           to: i.to.name,
@@ -163,7 +163,7 @@ export function buildMcpServer(s: Session, scopes: Scope[], base: string, opts: 
           amount: (i.amount / 100).toFixed(2),
           fee: (i.fee / 100).toFixed(2),
           total: (i.total / 100).toFixed(2),
-          network: config.moneyMode === "testnet" ? "testnet" : "mock",
+          network: moneyLive() ? config.stellarNetwork : "mock",
           dailyLeftAfter: (i.dailyRemainingAfter / 100).toFixed(2),
           perPaymentCap: (i.perPaymentCap / 100).toFixed(2),
           expiresAt: i.expiresAt,

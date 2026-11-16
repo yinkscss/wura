@@ -42,7 +42,7 @@ export default function WalletPage() {
 
   const l = data?.limits;
   // On testnet only USDC moves, so the dashboard shows USDC limits first.
-  const cur = data?.me.moneyMode === "testnet" ? "USDC" : "NGN";
+  const cur = data?.me.moneyMode !== "mock" ? "USDC" : "NGN";
   const usedFrac = l ? l.spentToday[cur] / l.daily[cur] : 0;
 
   return (
@@ -50,7 +50,7 @@ export default function WalletPage() {
       <PageHeader
         title={hello}
         sub={
-          data?.me.moneyMode === "testnet"
+          data?.me.moneyMode !== "mock"
             ? "Your Stellar testnet wallet. Limits are example amounts."
             : "Example balances and limits, for a single wallet."
         }
@@ -71,7 +71,7 @@ export default function WalletPage() {
           <StatCard
             refreshable
             label="Naira balance"
-            foot={data?.me.moneyMode === "testnet" ? "Naira on-ramp isn’t connected yet" : "Available to swap or send"}
+            foot={data?.me.moneyMode !== "mock" ? "Naira on-ramp isn’t connected yet" : "Available to swap or send"}
           >
             <div className="nums text-[38px] font-bold leading-none tracking-[-0.045em]">
               {data ? <AnimatedNaira minor={data.balances.NGN} /> : <SkeletonBlock className="h-10 w-44" />}
