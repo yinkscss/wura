@@ -90,6 +90,16 @@ export function bootProblems(env: Env): string[] {
       if ((env[other] || "").trim() === treasury) problems.push(`TREASURY_SECRET must not be the same as ${other}.`);
     }
   }
+  // No two secrets may be the same value: one leak must not open a second door.
+  const SECRETS = ["SESSION_SECRET", "CRON_SECRET", "RAMP_TOKEN_KEY", "PRIVY_APP_SECRET", "AGENT_KEY_SECRET", "DEV_KEY_SECRET"];
+  const seen = new Map<string, string>();
+  for (const name of SECRETS) {
+    const v = (env[name] || "").trim();
+    if (!v) continue;
+    const first = seen.get(v);
+    if (first) problems.push(`${name} must not be the same as ${first}.`);
+    else seen.set(v, name);
+  }
   if (mode === "testnet" && net.usdcIssuer === CIRCLE_MAINNET_USDC_ISSUER) {
     problems.push("Testnet is set to use the mainnet USDC issuer.");
   }
@@ -109,6 +119,16 @@ export function bootProblems(env: Env): string[] {
   }
   if ((env.SESSION_SECRET || "").length < 32) {
     problems.push("SESSION_SECRET (32+ characters) is required on mainnet.");
+  }
+  // Sign-in. Without a Privy app the server falls back to mock sign-in, where any email and code works.
+  if (!(env.NEXT_PUBLIC_PRIVY_APP_ID || "").trim()) {
+    problems.push("NEXT_PUBLIC_PRIVY_APP_ID is required on mainnet. Without it anyone could sign in as anyone.");
+  }
+  if (!(env.PRIVY_APP_SECRET || "").trim()) {
+    problems.push("PRIVY_APP_SECRET is required on mainnet, to confirm each user's wallet address with Privy.");
+  }
+  if (!(env.DATABASE_URL || "").trim()) {
+    problems.push("DATABASE_URL is required on mainnet. Without a database, balances' records and the log are lost on every restart.");
   }
   // Payment links carry this address to strangers. VERCEL_URL changes every deploy and can sit behind a login wall.
   const appUrl = (env.APP_URL || "").trim();
