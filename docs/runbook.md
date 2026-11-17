@@ -33,9 +33,9 @@ A partner transfer older than about a day cannot be re-checked automatically (th
 Who to ask at LINK: email only, for now. These are the support addresses LINK publishes in each service's `stellar.toml` (read 16 Nov 2026):
 
 - Naira top-ups and cash-outs (ngnc.online, LINK.IO LTD.): `support@linkio.africa`.
-- Dollar top-ups and cash-outs (anchor.linkio.world, LINK.IO GLOBAL LTD): `support@linkio.world`.
+- Dollar top-ups and cash-outs (anchor.linkio.world, LINK.IO GLOBAL LTD): `support@linkio.world` is what their `stellar.toml` lists, but **mail to it bounced on 17 Nov 2026** ("554 5.7.1 Relay access denied"). Use `support@linkio.africa` for both services until LINK says otherwise.
 
-Write to the one for the service the transfer used and copy the other. We have no named person, phone number or support hours yet, and no reply time has been promised; that is one of the questions to LINK. Put the answer here when it comes.
+Write to `support@linkio.africa` and name the service the transfer used. We have no named person, phone number or support hours yet, and no reply time has been promised; that is one of the questions to LINK. Put the answer here when it comes.
 
 What to give them: the partner reference (the transfer's id on their side, `anchor_tx_id` in `ramp_transfers`), the user's wallet address, the Stellar transaction hash, the amount and the time. Never send a sign-in token or the user's identity or bank details.
 
