@@ -1,4 +1,5 @@
 import { StrKey } from "@stellar/stellar-sdk";
+import { partnerFetch } from "./proxy";
 
 /**
  * SEP-1: read an anchor's stellar.toml and check it against values we pinned.
@@ -106,7 +107,7 @@ export async function loadAnchor(
   pin: AnchorPin,
   opts: { fetch?: typeof fetch; timeoutMs?: number } = {},
 ): Promise<AnchorEndpoints> {
-  const f = opts.fetch ?? fetch;
+  const f = opts.fetch ?? partnerFetch;
   let res: Response;
   try {
     res = await f(`https://${pin.homeDomain}/.well-known/stellar.toml`, {

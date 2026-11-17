@@ -1,3 +1,4 @@
+import { partnerFetch } from "./proxy";
 /**
  * SEP-24: hosted deposit and withdrawal. The anchor shows its own page, where
  * it collects identity and bank details. Wura never sees them.
@@ -76,7 +77,7 @@ function limits(section: unknown, assetCode: string): AssetLimits {
 
 /** Reads the anchor's published limits for one asset. No sign-in needed. */
 export async function getInfo(transferServer: string, assetCode: string, opts: Opts = {}): Promise<Sep24Info> {
-  const body = await getJson(opts.fetch ?? fetch, `${transferServer}/info`, {}, opts.timeoutMs ?? 8000, "info");
+  const body = await getJson(opts.fetch ?? partnerFetch, `${transferServer}/info`, {}, opts.timeoutMs ?? 8000, "info");
   return {
     deposit: limits(body.deposit, assetCode),
     withdraw: limits(body.withdraw, assetCode),
@@ -110,7 +111,7 @@ export async function startInteractive(
   opts: Opts = {},
 ): Promise<Interactive> {
   const body = await getJson(
-    opts.fetch ?? fetch,
+    opts.fetch ?? partnerFetch,
     `${input.transferServer}/transactions/${kind}/interactive`,
     {
       method: "POST",
@@ -204,7 +205,7 @@ export async function getTransfer(
   const url = new URL(`${input.transferServer}/transaction`);
   url.searchParams.set("id", input.id);
   const body = await getJson(
-    opts.fetch ?? fetch,
+    opts.fetch ?? partnerFetch,
     url,
     { headers: { Authorization: `Bearer ${input.token}` } },
     opts.timeoutMs ?? 8000,

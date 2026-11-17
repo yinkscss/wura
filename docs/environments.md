@@ -26,6 +26,7 @@ Set each one with only the **Production** box ticked. Preview gets its own diffe
 | `DATABASE_URL` | Production database. Preview must not point at it. |
 | `APP_URL` | The public https address, e.g. `https://wurapay.xyz`. |
 | `BETA_ALLOWLIST`, `MONEY_KILL` | Production values. |
+| `PARTNER_PROXY_URL` | Optional. A CONNECT proxy with a fixed IP (`http://user:pass@host:port`) for the partner calls, only if LINK allows an IP but not Vercel's. Production only, secret. Unset by default: no proxy. A set but invalid value makes partner calls fail rather than go direct. See runbook section 7.
 | `SOROSWAP_API_KEY` | Quotes only (swaps run on the Stellar DEX). Without it Soroswap shows as not connected. |
 | `SWAP_SLIPPAGE_BPS`, `SWAP_MAX_GAP_PCT`, `SWAP_GAP_CHECK_ABOVE_NGN`, `SWAP_GAP_CHECK_ABOVE_USDC` | Real-swap guards (M10). Defaults 50, 3, 5000, 5. See `.env.example`. |
 

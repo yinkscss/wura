@@ -50,3 +50,15 @@ Who to call at LINK: **TODO** (name, channel, hours). What to give them: the use
 ## 6. Database backups
 
 Production Postgres holds the only copy of balances' records, the log and payment links. Before Stage 3: turn on point-in-time recovery or daily backups in the database provider (Neon: Settings, Backups / restore window), then do one restore into a scratch database and open the app against it to prove it works. **TODO:** note the provider and the restore window here.
+
+## 7. Partner proxy (only if LINK allows an IP, not Vercel)
+
+Vercel Hobby has no fixed outgoing address. If LINK will only allow an IP, route the partner calls (`web/src/server/ramp/`: sign-in, config file, limits, transfers) through a forward proxy that has one.
+
+- **Off by default.** With `PARTNER_PROXY_URL` unset, nothing changes.
+- **Turn on:** in Vercel, Production only, set `PARTNER_PROXY_URL=http://user:pass@host:port` (a secret; never Preview, never in chat), give LINK the proxy's fixed IP, redeploy. **Turn off:** unset it and redeploy.
+- **It must be a CONNECT proxy.** The tunnel is TLS from Wura to LINK, so the proxy sees only the host name, never the sign-in token or the payment memo. Don't use a relay that ends TLS itself.
+- **Fails closed.** A set but unusable value (wrong scheme, not a URL) makes every partner call fail; it never falls back to a direct call. If the proxy is down, partner screens say the partner is unreachable and money still can't move without the partner.
+- Only the partner calls use it. Horizon, Privy and the database do not.
+- Check after turning on: open the top-up page; the partner's `/info` limits should load (a 403 means LINK isn't allowing the proxy's IP yet).
+- Vercel's own paid fixed-IP option is the alternative if the plan changes; then leave this unset.

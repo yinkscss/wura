@@ -1,3 +1,4 @@
+import { partnerFetch } from "./proxy";
 import { Keypair, StrKey, TransactionBuilder, WebAuth } from "@stellar/stellar-sdk";
 
 /**
@@ -95,7 +96,7 @@ export async function fetchChallenge(input: {
   fetch?: typeof fetch;
   timeoutMs?: number;
 }): Promise<string> {
-  const f = input.fetch ?? fetch;
+  const f = input.fetch ?? partnerFetch;
   const url = new URL(input.webAuthEndpoint);
   url.searchParams.set("account", input.account);
   url.searchParams.set("home_domain", input.homeDomain);
@@ -148,7 +149,7 @@ export async function exchangeChallenge(input: {
   fetch?: typeof fetch;
   timeoutMs?: number;
 }): Promise<AnchorToken> {
-  const f = input.fetch ?? fetch;
+  const f = input.fetch ?? partnerFetch;
   let res: Response;
   try {
     res = await f(input.webAuthEndpoint, {
