@@ -1,6 +1,6 @@
 # Runbook (M8)
 
-For whoever is on call. Short on purpose. Fill the two blanks marked **TODO** before Stage 3.
+For whoever is on call. Short on purpose. Fill the blank marked **TODO** before Stage 3.
 
 ## 1. Turn money off
 
@@ -30,7 +30,14 @@ An alert says `stuck_transfer` or `submit_unconfirmed`, with the first 12 charac
 
 A partner transfer older than about a day cannot be re-checked automatically (the partner sign-in lasts about a day). Reconcile flags it for a person. Ask the user for the partner reference, then ask LINK.
 
-Who to call at LINK: **TODO** (name, channel, hours). What to give them: the user's wallet address, the Stellar transaction hash, the amount, the time.
+Who to ask at LINK: email only, for now. These are the support addresses LINK publishes in each service's `stellar.toml` (read 16 Nov 2026):
+
+- Naira top-ups and cash-outs (ngnc.online, LINK.IO LTD.): `support@linkio.africa`.
+- Dollar top-ups and cash-outs (anchor.linkio.world, LINK.IO GLOBAL LTD): `support@linkio.world` is what their `stellar.toml` lists, but **mail to it bounced on 17 Nov 2026** ("554 5.7.1 Relay access denied"). Use `support@linkio.africa` for both services until LINK says otherwise.
+
+Write to `support@linkio.africa` and name the service the transfer used. We have no named person, phone number or support hours yet, and no reply time has been promised; that is one of the questions to LINK. Put the answer here when it comes.
+
+What to give them: the partner reference (the transfer's id on their side, `anchor_tx_id` in `ramp_transfers`), the user's wallet address, the Stellar transaction hash, the amount and the time. Never send a sign-in token or the user's identity or bank details.
 
 ## 4. Alerts and health
 
