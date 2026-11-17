@@ -158,7 +158,7 @@ Production runs `MONEY_MODE=mainnet`. `MONEY_KILL=1` is on (Olayinka checked it 
 - **M6 screens.** Blocked. LINK's Cloudflare answers 403 to every call from Vercel's servers (region iad1), from `/info` up. From a laptop the same `/info` calls answer 200 with curl, Node's own `fetch`, and the User-Agents `node`, `undici` and none. So the cause is where the request comes from, not how it's made. The cash-out page shows "The naira partner can't be reached right now. Nothing was sent." Two wrong pieces of copy were fixed: the wallet page called mainnet "testnet", and "Recent" said "preview" when the partner was unreachable.
 - **Cash-out amounts check.** Not run. It needs LINK reachable from Production and ₦10,000 NGNC to start a real cash-out, so it moves to Stage 3 step 1, after the top-up.
 
-**New gate for Stage 3.** LINK has to let Wura's server through (Otowo asks, with the endpoint and the 403). Vercel Hobby has no fixed outgoing IP. If LINK can only allow an IP, the partner calls need to go through a proxy with a fixed address.
+**New gate for Stage 3.** LINK has to let Wura's server through (Otowo asks, with the endpoint and the 403). Vercel Hobby has no fixed outgoing IP. If LINK can only allow an IP, the partner calls need to go through a proxy with a fixed address. The proxy is built and off by default (`PARTNER_PROXY_URL`, runbook section 7); it still needs a fixed-IP provider chosen and LINK to allow that IP.
 
 ## Stage 3 plan
 
