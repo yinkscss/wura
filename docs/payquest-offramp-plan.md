@@ -76,6 +76,19 @@ If LI.FI supports an exact-output CCTP route, or Paycrest confirms in writing th
 5. Hook into `money.ts` (Olayinka): bridge send and the Base send, both with caps, kill switch, history.
 6. Mainnet dry run, about $1: Stellar to Base to Paycrest to a real bank account. Record fees and timings here.
 
+## Built so far (27 November 2026)
+
+Both clients exist, off by default, and are covered by 17 offline tests. Neither has touched the live services.
+
+- `web/src/server/ramp/paycrest.ts`: banks, account-name check, sell rate, create/get order, webhook signature check and parser, and a mock with the same shapes. `createOrder` refuses any order that is not USDC on Base, has a bad or self-referencing deposit address, needs a memo, asks for less than the order or more than 3 USDC of fees on top, or expires in under a minute.
+- `web/src/server/bridge/lifi.ts`: quote and status only, never signs. Pins `cctp`, refuses a quote that adds a swap, delivers to another address or token, changes the amount, or guarantees less than the caller's floor. `bridgeLanded()` is the gate before creating the Paycrest order.
+- `web/src/server/units.ts`: exact bigint amounts.
+- Env vars in `web/.env.example`: `RAMP_OFFRAMP_PROVIDER`, `PAYCREST_API_KEY`, `PAYCREST_API_SECRET`, `LIFI_API_KEY`, `LIFI_STELLAR_USDC`.
+
+Not yet verified against the live APIs (check on the first real $1 run): Paycrest's webhook field names (`id`/`orderId`, `reference`/`paymentReference`), LI.FI's Stellar `transactionRequest` shape, and the Stellar USDC token identifier to pin in `LIFI_STELLAR_USDC`.
+
+Not built: the Base staging wallet, the orchestrator state machine, the webhook route, and the `money.ts` hook (steps 3 to 5 of the build plan).
+
 ## To get from Paycrest
 
 1. KYB onboarding at app.paycrest.io; what Wura must collect per end user for NGN off-ramp.
