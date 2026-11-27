@@ -2,6 +2,8 @@
 
 Status: research and plan, 27 November 2026. Nothing built. Nothing agreed with Paycrest. (The file name says "payquest" from an earlier typo; it is Paycrest.)
 
+The full path from today to live payments is in [offramp-implementation.md](offramp-implementation.md).
+
 This supersedes the line in [money-side.md](money-side.md) that parks Paycrest because it does not settle on Stellar. The bridge is how it can.
 
 ## What Paycrest is (from its [docs](https://docs.paycrest.io/), read 27 November 2026)

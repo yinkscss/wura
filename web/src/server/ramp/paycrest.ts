@@ -27,7 +27,8 @@ export const USDC_DECIMALS = 6;
 export const BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const DEFAULT_BASE_URL = "https://api.paycrest.io";
 const MIN_TIME_LEFT_MS = 60_000;
-const DEFAULT_MAX_OVERHEAD_UNITS = BigInt(3_000_000); // 3 USDC over the amount asked
+const OVERHEAD_FLOOR_UNITS = BigInt(250_000); // always allow 0.25 USDC of fees
+const OVERHEAD_CEILING_UNITS = BigInt(3_000_000); // never more than 3 USDC
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 export class PaycrestError extends Error {
@@ -143,7 +144,7 @@ export interface PaycrestDeps {
   fetch?: typeof fetch;
   env?: PaycrestEnv;
   now?: () => number;
-  /** Most the order may ask us to send above `amountUsdc` (fees). Default 3 USDC. */
+  /** Fixed ceiling on fees above `amountUsdc`. Default: 5% of the amount, at least 0.25 and at most 3 USDC. */
   maxOverheadUnits?: bigint;
 }
 
@@ -158,7 +159,6 @@ export function createPaycrest(deps: PaycrestDeps = {}): PaycrestClient {
   const env = deps.env ?? process.env;
   const doFetch = deps.fetch ?? fetch;
   const now = deps.now ?? Date.now;
-  const maxOverhead = deps.maxOverheadUnits ?? DEFAULT_MAX_OVERHEAD_UNITS;
   const base = (env.PAYCREST_BASE_URL?.trim() || DEFAULT_BASE_URL).replace(/\/+$/, "");
   if (!base.startsWith("https://")) throw new PaycrestError("PAYCREST_BASE_URL must be https.");
 
@@ -273,6 +273,10 @@ export function createPaycrest(deps: PaycrestDeps = {}): PaycrestClient {
         throw new PaycrestError("Paycrest's amount to pay isn't valid.");
       }
       if (units < asked) throw new PaycrestError("Paycrest asked for less than the order amount; refusing to guess.");
+      const proportional = asked / BigInt(20);
+      const maxOverhead =
+        deps.maxOverheadUnits ??
+        (proportional < OVERHEAD_FLOOR_UNITS ? OVERHEAD_FLOOR_UNITS : proportional > OVERHEAD_CEILING_UNITS ? OVERHEAD_CEILING_UNITS : proportional);
       if (units - asked > maxOverhead) throw new PaycrestError("Paycrest's fees are above our limit; not paying.");
       const validUntilMs = Date.parse(str(pa.validUntil) ?? "");
       if (!Number.isFinite(validUntilMs) || validUntilMs - now() < MIN_TIME_LEFT_MS) {

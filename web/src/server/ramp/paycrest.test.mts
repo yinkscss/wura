@@ -84,6 +84,7 @@ test("createOrder refuses anything that could send money the wrong way", async (
     ["memo required", { memo: "12345" }],
     ["less than asked", { amountToTransfer: "25.4" }],
     ["fees too high", { amountToTransfer: "30" }],
+    ["fees above 5% of a small order", { amountToTransfer: "26.9" }],
     ["expires too soon", { validUntil: new Date(NOW + 10_000).toISOString() }],
     ["no expiry", { validUntil: undefined }],
     ["bad amount", { amountToTransfer: "abc" }],
